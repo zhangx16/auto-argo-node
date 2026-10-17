@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from . import auth, db, deploy, agent
+from . import auth, db, deploy, agent, subscriptions
 from .scripts import INSTALL_SH, UNINSTALL_SH, render_script
 
 APP_DIR = Path(__file__).resolve().parent
@@ -94,6 +94,7 @@ def on_startup() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     db.init_db()
     agent.init()
+    subscriptions.init()
     deploy.init()
     agent.start_loop()
     ensure_admin()
@@ -545,6 +546,7 @@ async def http_exc_handler(request: Request, exc: HTTPException):
 
 deploy.register(app, require_login)
 agent.register(app, require_login, public_url)
+subscriptions.register(app, require_login, public_url, ensure_secret())
 
 @app.on_event("shutdown")
 def stop_agent_probes():

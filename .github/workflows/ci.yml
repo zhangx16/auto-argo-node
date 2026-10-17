@@ -17,6 +17,7 @@ jobs:
           sh -n app/node-agent.sh app/node-uninstall.sh scripts/fetch-installer.sh
           bash -n app/node-repair.sh app/port-update.sh
           node --check app/static/deploy-ui.js
+          node --check app/static/subscriptions.js
       - name: Run isolated backend and HTTP tests
         run: >-
           docker run --rm

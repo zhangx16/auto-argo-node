@@ -5,12 +5,26 @@ import os from 'node:os';
 import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
 const root=path.resolve(import.meta.dirname,'../app/static');
-const jobs=[];let submitted=null;
+const jobs=[],subscriptions=[];let submitted=null;
 const server=http.createServer(async(req,res)=>{
  res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
  if(req.url.startsWith('/api/')){
   res.setHeader('Content-Type','application/json');
   if(req.url==='/api/nodes')return res.end(JSON.stringify(jobs));
+  if(req.url==='/api/subscriptions'&&req.method==='GET')return res.end(JSON.stringify(subscriptions));
+  if(req.url==='/api/subscriptions'&&req.method==='POST'){
+   let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body);
+   const sub={id:1,...data,node_count:data.node_ids.length,exportable_count:data.node_ids.length,expired:false,urls:{}};
+   for(const fmt of ['raw','base64','clash','singbox'])sub.urls[fmt]='http://example.com/subscribe/1/fixture?format='+fmt;
+   subscriptions.push(sub);return res.end(JSON.stringify(sub));
+  }
+  if(req.url.startsWith('/api/subscriptions/1/preview'))return res.end(JSON.stringify({content:'selected fixture node only',node_count:1}));
+  if(req.url==='/api/subscriptions/1/rotate'&&req.method==='POST'){
+   for(const fmt of ['raw','base64','clash','singbox'])subscriptions[0].urls[fmt]=subscriptions[0].urls[fmt].replace('/fixture?','/rotated?');
+   return res.end(JSON.stringify(subscriptions[0]));
+  }
+  if(req.url==='/api/subscriptions/1'&&req.method==='DELETE'){subscriptions.splice(0);return res.end('{}');}
+
   if(req.url.endsWith('/logs'))return res.end(JSON.stringify([{created_at:'2026-10-17',line:'QA: node sent heartbeat'}]));
   if(req.url==='/api/agent-nodes'&&req.method==='POST'){
    let body='';for await(const chunk of req)body+=chunk;submitted=JSON.parse(body);
@@ -86,6 +100,19 @@ try{
  for(let i=0;i<30;i++){if(jobs[0].probe_status==='pending')break;await new Promise(r=>setTimeout(r,100));}
  assert.equal(jobs[0].probe_status,'pending');jobs[0].probe_status='ok';
  await evaluate('document.querySelector("#refresh").click()');await new Promise(r=>setTimeout(r,250));
+
+ await evaluate('document.querySelector("#subscription-module").open=true;document.querySelector("#new-subscription").click()');
+ assert.equal(await evaluate('document.querySelector("#subscription-editor").open'),true);
+ assert.equal(await evaluate('document.querySelectorAll("#sub-node-picker input").length'),1);
+ await evaluate('document.querySelector("#sub-name").value="Selected nodes";document.querySelector("#sub-node-picker input").click();document.querySelector("#subscription-form").requestSubmit()');
+ for(let i=0;i<30;i++){if(subscriptions.length&&await evaluate('!!document.querySelector(".subscription-item")'))break;await new Promise(r=>setTimeout(r,100));}
+ assert.deepEqual(subscriptions[0].node_ids,[1]);
+ await evaluate('document.querySelector(".subscription-item summary").click();document.querySelector("[data-sub-format]").value="clash";document.querySelector("[data-sub-format]").dispatchEvent(new Event("change",{bubbles:true}))');
+ assert.equal(await evaluate('document.querySelector(".subscription-url").value.endsWith("format=clash")'),true);
+ await evaluate('document.querySelector("[data-sub-action=preview]").click()');
+ for(let i=0;i<30;i++){if(await evaluate('document.querySelector("#subscription-preview").open'))break;await new Promise(r=>setTimeout(r,100));}
+ assert.equal(await evaluate('document.querySelector("#sub-preview-content").textContent'),'selected fixture node only');
+ await evaluate('document.querySelector("#close-sub-preview").click()');
  const dest=path.resolve(import.meta.dirname,'../artifacts');fs.mkdirSync(dest,{recursive:true});
  await evaluate('window.scrollTo(0,0)');
  let shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});fs.writeFileSync(dest+'/desktop.png',Buffer.from(shot.data,'base64'));

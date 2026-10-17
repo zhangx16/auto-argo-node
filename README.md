@@ -8,7 +8,7 @@
 
 - 自定义名称、本地监听端口、优选域名/IP、客户端 HTTPS 端口、UUID 和 WebSocket 路径。
 - 一次性安装凭据，有效期 24 小时；安装完成后换成仅对应节点可用的运行凭据。
-- 自动同步临时隧道域名及 VLESS 链接，不生成节点二维码或订阅配置。
+- 自动同步临时隧道域名及 VLESS 链接，可勾选节点生成订阅，不生成节点二维码。
 - 编辑节点参数；修改监听端口时排队执行，确认成功后才更新面板实际端口。
 - 连续异常检测、隧道重建、离线提示及面板侧实际 VLESS 转发测试。
 - 远端卸载成功后删除面板记录；同机其他节点及仍在使用的共用服务保留。
@@ -93,6 +93,29 @@ sudo cat data/credentials.txt
 
 不要在远端节点尚未卸载时直接销毁面板数据，否则面板会失去继续调度清理的凭据。
 
+## 订阅管理
+
+展开主页“订阅管理”并点击“创建订阅”，填写名称，勾选要导出的已部署节点。支持多个独立订阅，每个订阅只包含明确选择的节点，新部署节点不会自动加入。
+
+| 格式 | 用途 |
+| --- | --- |
+| 通用 Base64 | Base64 编码的 VLESS URI 列表 |
+| 原始 VLESS 链接 | 每行一条，可继续导入 Sub-Store 等工具处理 |
+| Clash / Mihomo | 包含节点、选择组和基础全局代理规则的 YAML，需支持 VLESS 的 Mihomo 客户端 |
+| sing-box | 包含 mixed 入站、选择出站、DoH DNS 及基础路由的 JSON（sing-box 1.12+） |
+
+sing-box 基础配置使用 Cloudflare `1.1.1.1` 的 HTTPS DNS，并通过直连出站解析节点域名；可按自己的网络环境调整 DNS。
+
+Clash/Mihomo 与 sing-box 基础配置的本地代理监听端口为 `127.0.0.1:7890`；Clash 使用 `allow-lan: false`。下载配置会替换客户端导入的相应配置，复杂分流规则可通过客户端或其他管理工具另行配置。
+
+每个订阅可选择格式复制地址、预览内容、下载配置、修改节点选择、停用、设置到期时间或重置地址。重置后旧地址立即失效；删除订阅不会删除节点。允许先保存空订阅，尚无可导出节点时返回错误，不会生成静默直连配置。
+
+订阅地址是不需要面板登录的访问凭据，持有者可读取该订阅的节点配置。它只允许读取对应订阅，不具备面板管理能力；不要公开分享到公共仓库。
+
+订阅内容在每次请求时读取节点最新数据，优选地址、SNI、WS Host、路径与 Early Data 参数会保留。临时隧道域名更新后，客户端需刷新订阅才能取得新配置。卸载中或已删除节点自动排除；短暂离线节点保留在选择中，避免网络波动改变客户端配置。
+
+这一功能参考 [妙妙屋](https://github.com/iluobei/miaomiaowu) 的节点选择/生成订阅方式及 [Sub-Store](https://github.com/sub-store-org/Sub-Store) 的多格式订阅管理思路，独立实现于本项目中，无需部署第三方转换服务。转换字段参照 [Mihomo VLESS 文档](https://wiki.metacubex.one/en/config/proxies/vless/) 和 [sing-box VLESS 文档](https://sing-box.sagernet.org/configuration/outbound/vless/)。
+
 ## 测活与自动修复
 
 节点脚本每分钟检查 cloudflared 进程、本地 WS 握手及公网隧道 WS 握手并上报。连续 3 次失败、距上次修复至少 300 秒，才尝试修复；服务器整体出站网络异常时暂不反复重建隧道。
@@ -129,7 +152,7 @@ docker compose ps
 
 ## 开发与验证
 
-详细步骤见 [测试说明](docs/testing.md)。Docker 构建、29 项后端/HTTP 测试，以及 Python/Shell/JavaScript 语法检查已在整理发布时验证；GitHub Actions 提供相同的后端验证流程。
+详细步骤见 [测试说明](docs/testing.md)。Docker 构建、34 项后端/HTTP 测试，以及 Python/Shell/JavaScript 语法检查已在整理发布时验证；GitHub Actions 提供相同的后端验证流程。
 
 ```text
 app/                 FastAPI、SQLite、登录、节点任务、Shell 代理和网页
