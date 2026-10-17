@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>登录 · singbox-mgmt</title>
+  <link rel="stylesheet" href="/static/app.css?v=2">
+</head>
+<body>
+  <div class="login-page">
+    <div class="card login-card">
+      <div class="brand">
+        <div class="logo">SB</div>
+        <div>
+          <h1>singbox-mgmt</h1>
+          <p>密码 + 两步验证</p>
+        </div>
+      </div>
+      <p class="hint" id="step-hint">先验证账号密码，再输入认证器验证码。</p>
+      <div class="err" id="err" hidden></div>
+
+      <form class="form" id="form-pass">
+        <label>用户名
+          <input name="username" autocomplete="username" required>
+        </label>
+        <label>密码
+          <input name="password" type="password" autocomplete="current-password" required>
+        </label>
+        <button class="btn btn-primary" type="submit">下一步</button>
+      </form>
+
+      <form class="form" id="form-totp" hidden>
+        <input type="hidden" id="totp-challenge">
+        <label>两步验证码
+          <input id="totp-code" inputmode="numeric" autocomplete="one-time-code" maxlength="19" required>
+        </label>
+        <button class="btn btn-primary" type="submit">登录</button>
+      </form>
+
+      <form class="form" id="form-setup" hidden>
+        <input type="hidden" id="setup-challenge">
+        <p class="hint">首次登录必须绑定 TOTP。扫描二维码，或手动输入密钥。</p>
+        <img id="qr" alt="TOTP 二维码" width="180" height="180">
+        <div class="cmd" id="otpauth-secret"></div>
+        <label>认证器上的 6 位验证码
+          <input id="setup-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" required>
+        </label>
+        <button class="btn btn-primary" id="btn-setup" type="submit">确认绑定</button>
+        <div id="backup-box" hidden>
+          <p class="hint">一次性备份码（只显示这一次）</p>
+          <pre class="logs" id="backup-codes"></pre>
+          <div class="row">
+            <button class="btn" type="button" id="btn-copy-backup">复制备份码</button>
+            <button class="btn btn-primary" type="button" id="btn-enter" hidden>进入面板</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+  <script src="/static/login.js?v=2"></script>
+</body>
+</html>

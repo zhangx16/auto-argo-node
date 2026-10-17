@@ -1,0 +1,10 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+itsdangerous==2.2.0
+python-multipart==0.0.20
+pyotp==2.9.0
+segno==1.6.6
+
+paramiko==3.5.1
+
+websockets==17.2

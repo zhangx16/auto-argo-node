@@ -1,0 +1,21 @@
+services:
+  singbox-mgmt:
+    build: .
+    image: auto-argo-node:local
+    restart: unless-stopped
+    ports:
+      - "${PANEL_BIND:-127.0.0.1}:${PANEL_PORT:-18899}:18899"
+    volumes:
+      - ./data:/app/data
+    environment:
+      PANEL_URL: "${PANEL_URL:?Copy .env.example to .env and set PANEL_URL}"
+      ADMIN_USER: "${ADMIN_USER:-admin}"
+      ADMIN_PASSWORD: "${ADMIN_PASSWORD:-}"
+      ORIGIN_IP: "${ORIGIN_IP:-}"
+      TZ: "${TZ:-Asia/Shanghai}"
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:18899/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s

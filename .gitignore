@@ -1,0 +1,23 @@
+# Private deployment state
+.env
+.env.*
+!.env.example
+data/
+backups/
+artifacts/
+*.db
+*.db-shm
+*.db-wal
+*.sqlite*
+*.key
+*.pem
+*.log
+# Downloaded third-party installer (verified during build)
+app/vendor/singbox.sh
+# Local tooling
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+node_modules/
+.DS_Store

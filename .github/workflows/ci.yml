@@ -1,0 +1,26 @@
+name: Validate
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build pinned installer and application
+        run: docker build -t auto-argo-node:test .
+      - name: Validate Python, shell, and frontend syntax
+        run: |
+          docker run --rm auto-argo-node:test python -m compileall -q app
+          sh -n app/node-agent.sh app/node-uninstall.sh scripts/fetch-installer.sh
+          bash -n app/node-repair.sh app/port-update.sh
+          node --check app/static/deploy-ui.js
+      - name: Run isolated backend and HTTP tests
+        run: >-
+          docker run --rm
+          -v "$PWD/tests:/app/tests:ro"
+          -e PYTHONPATH=/app:/app/tests
+          auto-argo-node:test
+          python -m unittest discover -s tests -p 'test_*.py' -v
