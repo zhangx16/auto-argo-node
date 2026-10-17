@@ -42,7 +42,7 @@ for _ in range(100):
     time.sleep(.2)
 else:raise RuntimeError('QA containers did not become ready')
 print('Creating isolated command-based node',flush=True)
-result=api('/api/agent-nodes','POST',{'remark':'Agent integration QA','node_port':18180,'client_address':'hk.031216.xyz','client_port':443})
+result=api('/api/agent-nodes','POST',{'remark':'Agent integration QA','node_port':18180,'client_address':'','client_port':443})
 id=result['id'];node_command(result['command']+'\n')
 n=get(id)
 if not n['share_link']:
@@ -74,7 +74,7 @@ for i in range(3):tick(id)
 n=get(id);assert n['repair_count']==repairs and n['sni']==current_domain
 print('PASS: five-minute repair cooldown prevents restart loop',flush=True)
 node_command("kill -CONT \"$(cat /run/singboxlite/argo-18180.pid)\"\n");tick(id)
-api(f'/api/agent-nodes/{id}','PATCH',{'remark':'Agent edited','node_port':18182,'client_address':'hk.031216.xyz','client_port':443})
+api(f'/api/agent-nodes/{id}','PATCH',{'remark':'Agent edited','node_port':18182,'client_address':'','client_port':443})
 assert get(id)['node_port']==18180
 # Run exactly the same one-shot cron task that normal installations run each minute.
 tick(id);n=get(id);assert n['node_port']==18182 and n['desired_revision']==n['applied_revision'],n['last_error']

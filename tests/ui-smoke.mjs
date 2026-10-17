@@ -55,11 +55,11 @@ try{
  assert.equal(await evaluate('document.querySelector("#password")===null'),true,'command installation never asks for SSH secrets');
  await evaluate(`document.querySelector('#remark').value='QA node';document.querySelector('#deploy-form').requestSubmit()`);
  for(let i=0;i<30;i++){if(submitted)break;await new Promise(r=>setTimeout(r,100));}
- assert.equal(submitted.client_address,'hk.031216.xyz');assert.equal(submitted.node_port,18080);
+ assert.equal(submitted.client_address,'');assert.equal(submitted.node_port,18080);
  for(let i=0;i<30;i++){if(await evaluate('document.querySelector("#command-dialog").open'))break;await new Promise(r=>setTimeout(r,100));}
  assert.equal(await evaluate('document.querySelector("#install-command").textContent.includes("installation-fixture")'),true);
  await evaluate('document.querySelector("#close-command").click()');
- Object.assign(jobs[0],{status:'online',job_status:'done',agent_bound:true,host_ip:'192.0.2.1',health_status:'online',last_report_at:'2026-10-17T08:00:00Z',local_ws:true,public_ws:true,probe_status:'ok',latency_ms:120,probe_at:'2026-10-17T08:00:00Z',repair_count:1,applied_revision:1,sni:'qa-example.trycloudflare.com',share_link:'vless://341cad6d-9bf5-4b09-9c96-a7879ebc8fe1@hk.031216.xyz:443?security=tls&type=ws&host=qa-example.trycloudflare.com'});
+ Object.assign(jobs[0],{status:'online',job_status:'done',agent_bound:true,host_ip:'192.0.2.1',health_status:'online',last_report_at:'2026-10-17T08:00:00Z',local_ws:true,public_ws:true,probe_status:'ok',latency_ms:120,probe_at:'2026-10-17T08:00:00Z',repair_count:1,applied_revision:1,sni:'qa-example.trycloudflare.com',share_link:'vless://341cad6d-9bf5-4b09-9c96-a7879ebc8fe1@edge.example.com:443?security=tls&type=ws&host=qa-example.trycloudflare.com'});
  await evaluate('document.querySelector("#refresh").click()');
  for(let i=0;i<30;i++){if(await evaluate('document.querySelector("#node-count").textContent==="1"'))break;await new Promise(r=>setTimeout(r,100));}
  assert.equal(await evaluate('document.querySelector("#deployed-nodes .health-grid").textContent.includes("转发正常")'),true);

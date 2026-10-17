@@ -12,7 +12,7 @@ class AgentApiTests(unittest.TestCase):
     tearDownClass=classmethod(api_tests.ApiTests.tearDownClass.__func__)
     call=api_tests.ApiTests.call
     def create_agent(self,port=18080):
-        code,data=self.call('/api/agent-nodes','POST',{'remark':'Agent QA','node_port':port,'client_address':'hk.031216.xyz','client_port':443})
+        code,data=self.call('/api/agent-nodes','POST',{'remark':'Agent QA','node_port':port,'client_address':'edge.example.com','client_port':443})
         self.assertEqual(code,200,data)
         import re
         token=re.search(r'/agent/bootstrap/([A-Za-z0-9_-]+)\.sh',data['command']).group(1)
@@ -51,7 +51,7 @@ class AgentApiTests(unittest.TestCase):
         code,result=self.agent_call('/agent/report',token,{'state':'online','metadata':meta,'process_alive':True,'local_ws':True,'public_ws':True,'repair_count':1})
         self.assertEqual(code,200,result)
         _,nodes=self.call('/api/nodes');node=next(x for x in nodes if x['id']==id)
-        self.assertIn('@hk.031216.xyz:443?',node['share_link']);self.assertIn('sni=new-domain.trycloudflare.com',node['share_link']);self.assertEqual(node['repair_count'],1);self.assertEqual(node['management'],'agent')
+        self.assertIn('@edge.example.com:443?',node['share_link']);self.assertIn('sni=new-domain.trycloudflare.com',node['share_link']);self.assertEqual(node['repair_count'],1);self.assertEqual(node['management'],'agent')
     def test_port_edit_queues_job_without_changing_actual_port(self):
         id,token,meta=self.initial_success()
         code,node=self.call(f'/api/agent-nodes/{id}','PATCH',{'remark':'Renamed','node_port':18081,'client_address':'new.example.com','client_port':8443})
@@ -76,7 +76,7 @@ class AgentApiTests(unittest.TestCase):
         code,_=self.call('/agent/enroll','POST',{'enrollment_token':token},authed=False);self.assertEqual(code,410)
     def test_failed_config_keeps_old_link_and_requires_explicit_retry(self):
         id,token,meta=self.initial_success()
-        self.call(f'/api/agent-nodes/{id}','PATCH',{'remark':'Keep old','node_port':18085,'client_address':'hk.031216.xyz','client_port':443})
+        self.call(f'/api/agent-nodes/{id}','PATCH',{'remark':'Keep old','node_port':18085,'client_address':'edge.example.com','client_port':443})
         _,work=self.agent_call('/agent/work',token);rev=work['job']['revision']
         code,_=self.agent_call('/agent/report',token,{'state':'error','metadata':meta,'job_revision':rev,'job_ok':False,'error':'forced update failure'});self.assertEqual(code,200)
         _,nodes=self.call('/api/nodes');n=next(n for n in nodes if n['id']==id)
@@ -88,7 +88,7 @@ class AgentApiTests(unittest.TestCase):
         import sqlite3
         from pathlib import Path
         id,token,meta=self.initial_success()
-        self.call(f'/api/agent-nodes/{id}','PATCH',{'remark':'Offline','node_port':18086,'client_address':'hk.031216.xyz','client_port':443})
+        self.call(f'/api/agent-nodes/{id}','PATCH',{'remark':'Offline','node_port':18086,'client_address':'edge.example.com','client_port':443})
         _,work=self.agent_call('/agent/work',token);self.agent_call(f"/agent/job/{work['job']['revision']}.sh",token)
         c=sqlite3.connect(Path(self.tmp.name)/'app.db');c.execute("UPDATE node_agents SET last_report_at='2020-01-01T00:00:00Z' WHERE node_id=?",(id,));c.commit();c.close()
         _,nodes=self.call('/api/nodes');n=next(n for n in nodes if n['id']==id);self.assertEqual(n['health_status'],'offline');self.assertEqual(n['status'],'offline')

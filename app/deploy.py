@@ -46,7 +46,7 @@ class DeployBody(Target):
     host_key: str = Field(min_length=20, max_length=4096)
     remark: str = Field(default='Argo VLESS', min_length=1, max_length=80)
     node_port: int = Field(default=18080, ge=1024, le=65535)
-    client_address: str = Field(default='hk.031216.xyz', max_length=253)
+    client_address: str = Field(default='', max_length=253)
     client_port: int = Field(default=443)
     ws_path: str = Field(default='', max_length=128)
     uuid: str = Field(default='', max_length=36)

@@ -86,9 +86,11 @@ class DeployTests(unittest.TestCase):
         self.assertIn('web-library',inner)
         subprocess.run(['sh','-n'],input=deploy.driver(self.body(operation='read')).encode(),check=True)
     def test_link_keeps_host_and_sni_and_early_data(self):
-        link=deploy.make_link(META,self.body())
+        self.assertEqual(self.body().client_address,'')
+        self.assertEqual(urlparse(deploy.make_link(META,self.body())).hostname,META['domain'])
+        link=deploy.make_link(META,self.body(client_address='edge.example.com'))
         parts=urlparse(link);q=parse_qs(parts.query)
-        self.assertEqual(parts.hostname,'hk.031216.xyz');self.assertEqual(q['host'],[META['domain']]);self.assertEqual(q['sni'],[META['domain']]);self.assertEqual(q['path'],['/sample?ed=2560'])
+        self.assertEqual(parts.hostname,'edge.example.com');self.assertEqual(q['host'],[META['domain']]);self.assertEqual(q['sni'],[META['domain']]);self.assertEqual(q['path'],['/sample?ed=2560'])
     def test_probe_real_ssh_transport(self):
         peer=Peer();result=deploy.probe(deploy.Target(host='127.0.0.1',ssh_port=peer.port));self.assertEqual(result['host_key'],HOST_KEY.get_base64());peer.thread.join(10)
     def test_worker_password_real_ssh(self):
@@ -118,7 +120,7 @@ class DeployTests(unittest.TestCase):
 class NodeEditTests(unittest.TestCase):
     def setUp(self):
         db.init_db();deploy.init()
-        self.node=db.create_node('Original',18080,META['domain'],'hk.031216.xyz',os.urandom(18).hex())
+        self.node=db.create_node('Original',18080,META['domain'],'edge.example.com',os.urandom(18).hex())
         c=db.get_conn();c.execute('INSERT INTO deployments VALUES (?,?,?,?,?,?)',(self.node['id'],'127.0.0.1',22,443,META['path'],'test-fingerprint'));c.commit()
         body=deploy.DeployBody(host='127.0.0.1',host_key=HOST_KEY.get_base64(),remark='Original')
         db.update_node(self.node['id'],status='online',uuid=META['uuid'],share_link=deploy.make_link(META,body))
