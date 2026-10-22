@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 const root=path.resolve(import.meta.dirname,'../app/static');
 const jobs=[],subscriptions=[],externalNodes=[];let submitted=null;
 function updateFixtureSub(s){
+ s.usage={upload:1024,download:2048,used:3072,total:s.traffic_limit_bytes||0,managed_count:1,measured_count:1,external_count:(s.external_node_ids||[]).length,stale_count:0,since:'2026-10-22'};
  s.chains=s.chains||[];s.chain_only=!!s.chain_only;s.chain_count=s.chains.length;s.chain_errors=[];
  s.node_count=s.node_ids.length+(s.external_node_ids||[]).length;s.exportable_count=s.chains.length+(s.chain_only?0:s.node_count);
  s.formats=s.chains.length?['clash','singbox']:['base64','raw','clash','singbox'];
@@ -18,8 +19,10 @@ const server=http.createServer(async(req,res)=>{
  res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
  if(req.url.startsWith('/api/')){
   res.setHeader('Content-Type','application/json');
+  if(req.url==='/api/regions')return res.end(JSON.stringify({countries:{HK:'Hong Kong',US:'United States',JP:'Japan',ZZ:'未知地区'},release:'2026-10'}));
+  if(req.url.startsWith('/api/regions/managed/')&&req.method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body);Object.assign(jobs[0],{country_code:data.country_code||'JP',country_source:data.country_code?'manual':'auto',country_flag:data.country_code==='US'?'🇺🇸':'🇯🇵'});jobs[0].display_name=jobs[0].country_flag+' '+jobs[0].remark;return res.end(JSON.stringify(jobs[0]));}
   if(req.url==='/api/notifications')return res.end(JSON.stringify({configured:true,bot_username:'fixture_bot',chat_id:'123',enabled:true,offline_seconds:180,summary_hours:24,summary_enabled:true,queued:0}));
-  if(req.url==='/api/traffic')return res.end(JSON.stringify({nodes:jobs.map(n=>({...n,remark:n.remark,agent_version:3,rx:1024,tx:2048,today_rx:1024,today_tx:2048,month_rx:1024,month_tx:2048,available:true,sampled_at:1792600000})),totals:{rx:1024,tx:2048,today_rx:1024,today_tx:2048,month_rx:1024,month_tx:2048},scope:'fixture port accounting'}));
+  if(req.url.startsWith('/api/traffic'))return res.end(JSON.stringify({nodes:jobs.map(n=>({...n,remark:n.remark,agent_version:3,rx:1024,tx:2048,today_rx:1024,today_tx:2048,month_rx:1024,month_tx:2048,available:true,sampled_at:1792600000})),totals:{rx:1024,tx:2048,today_rx:1024,today_tx:2048,month_rx:1024,month_tx:2048},history:{points:Array.from({length:Number(new URL(req.url,'http://local').searchParams.get('days')||7)},(_,i)=>({date:new Date(Date.UTC(2026,9,22)-((Number(new URL(req.url,'http://local').searchParams.get('days')||7)-1-i)*86400000)).toISOString().slice(0,10),rx:(i+1)*1024,tx:(i+1)*2048,measured:i>0}))},scope:'fixture port accounting'}));
   if(req.url==='/api/notifications/chats')return res.end(JSON.stringify([{id:'123',name:'Fixture user',type:'private'}]));
   if(req.url==='/api/notifications/test'||req.url==='/api/traffic/notify'||req.url.endsWith('/upgrade'))return res.end(JSON.stringify({ok:true}));
   if(req.url==='/api/cloudflare')return res.end(JSON.stringify({configured:true,zone_name:'example.com'}));
@@ -86,7 +89,7 @@ try{
  await send('Runtime.enable');await send('Page.enable');await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
  await send('Page.navigate',{url:'http://127.0.0.1:18909/'});
  for(let i=0;i<40;i++){if(await evaluate('!!document.querySelector("#tasks .empty")'))break;await new Promise(r=>setTimeout(r,100));}
- assert.equal(await evaluate('document.querySelector("h1").textContent'),'从服务器，到节点。');
+ assert.equal(await evaluate('document.querySelector("h1").textContent'),'节点概览');
  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true);
  assert.equal(await evaluate('document.querySelector("#password")===null'),true,'command installation never asks for SSH secrets');
  await evaluate(`document.querySelector('#remark').value='QA node';document.querySelector('#deploy-form').requestSubmit()`);
@@ -127,9 +130,10 @@ try{
  await evaluate('document.querySelector("#subscription-module").open=true;document.querySelector("#new-subscription").click()');
  assert.equal(await evaluate('document.querySelector("#subscription-editor").open'),true);
  assert.equal(await evaluate('document.querySelectorAll("#sub-node-picker input").length'),1);
- await evaluate('document.querySelector("#sub-name").value="Selected nodes";document.querySelector("#sub-node-picker input").click();document.querySelector("#subscription-form").requestSubmit()');
+ await evaluate('document.querySelector("#sub-name").value="Selected nodes";document.querySelector("#sub-traffic-limit").value="1.5";document.querySelector("#sub-node-picker input").click();document.querySelector("#subscription-form").requestSubmit()');
  for(let i=0;i<30;i++){if(subscriptions.length&&await evaluate('!!document.querySelector(".subscription-item")'))break;await new Promise(r=>setTimeout(r,100));}
  assert.deepEqual(subscriptions[0].node_ids,[1]);
+ assert.equal(subscriptions[0].traffic_limit_bytes,1610612736);
  await evaluate('document.querySelector(".subscription-item summary").click();document.querySelector("[data-sub-format]").value="clash";document.querySelector("[data-sub-format]").dispatchEvent(new Event("change",{bubbles:true}))');
  assert.equal(await evaluate('document.querySelector(".subscription-url").value.endsWith("format=clash")'),true);
  await evaluate('document.querySelector("[data-sub-action=preview]").click()');
@@ -189,7 +193,7 @@ try{
  assert.equal(await evaluate('document.querySelector("#fixed-hostname-field").hidden'),false);
  assert.equal(await evaluate('document.querySelector("#fixed-domain-hint").textContent.includes("example.com")'),true);
  const dest=path.resolve(import.meta.dirname,'../artifacts');fs.mkdirSync(dest,{recursive:true});
- await evaluate('document.querySelector("#node-module").open=true;window.scrollTo(0,0)');
+ await evaluate('document.querySelector("#node-module").open=true;window.scrollTo({top:0,behavior:"instant"})');
  let shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});fs.writeFileSync(dest+'/desktop.png',Buffer.from(shot.data,'base64'));
  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true);
@@ -233,6 +237,43 @@ try{
  const waitFor=async expr=>{for(let i=0;i<50;i++){if(await evaluate(expr))return;await new Promise(r=>setTimeout(r,100));}throw Error('Timed out: '+expr);};
  await evaluate(`document.getElementById('traffic-module').open=true;document.getElementById('traffic-refresh').click()`);
  await waitFor(`document.getElementById('traffic-totals').textContent.includes('KiB')`);
+ assert.equal(await evaluate('document.querySelectorAll("#traffic-chart svg rect").length'),14);
+ await evaluate(`document.getElementById('traffic-days').value='30';document.getElementById('traffic-days').dispatchEvent(new Event('change'))`);
+ await waitFor(`document.querySelectorAll('#traffic-chart-data tr').length===30`);
+ await evaluate(`document.getElementById('traffic-chart-node').value='1';document.getElementById('traffic-chart-node').dispatchEvent(new Event('change'))`);
+ await waitFor(`document.querySelectorAll('#traffic-chart-data tr').length===30`);
+ await evaluate(`document.querySelector('.chart-data').open=true`);
+ await send('Emulation.setDeviceMetricsOverride',{width:375,height:844,deviceScaleFactor:1,mobile:true});
+ await new Promise(r=>setTimeout(r,250));
+ await evaluate(`document.querySelector('.traffic-chart-section').scrollIntoView({behavior:'instant',block:'start'})`);
+ assert.equal(await evaluate('document.documentElement.scrollWidth<=innerWidth'),true);
+ const chartPoint=await evaluate(`(()=>{const r=document.querySelector('#traffic-chart svg').getBoundingClientRect();return{x:r.left+66+(r.width-78)*.95,y:r.top+80}})()`);
+ await send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[chartPoint]});
+ await send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+ await waitFor(`!document.getElementById('traffic-chart-tooltip').hidden`);
+ assert.equal(await evaluate(`(()=>{const t=document.getElementById('traffic-chart-tooltip'),r=t.getBoundingClientRect();return t.textContent.includes('上行（IN）')&&t.textContent.includes('下行（OUT）')&&r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight})()`),true);
+ await send('Page.captureScreenshot',{format:'png'}).then(shot=>fs.writeFileSync(dest+'/traffic-tooltip-mobile.png',Buffer.from(shot.data,'base64')));
+ await evaluate(`document.body.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}))`);
+ assert.equal(await evaluate(`document.getElementById('traffic-chart-tooltip').hidden`),true);
+ const chartBounds=await evaluate(`(()=>{const r=document.querySelector('.traffic-chart-section').getBoundingClientRect();return{x:r.x+scrollX,y:r.y+scrollY,width:r.width,height:Math.min(r.height,600),scale:1}})()`);
+ const chartShot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true,clip:chartBounds});fs.writeFileSync(dest+'/traffic-history-mobile.png',Buffer.from(chartShot.data,'base64'));
+ await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
+ await new Promise(r=>setTimeout(r,200));
+
+ await evaluate(`document.getElementById('traffic-chart').scrollIntoView({behavior:'instant',block:'center'})`);
+ await new Promise(r=>setTimeout(r,350));
+ const desktopPoint=await evaluate(`(()=>{const r=document.querySelector('#traffic-chart svg').getBoundingClientRect();return{x:r.left+66+(r.width-78)*.5,y:r.top+80}})()`);
+ await send('Input.dispatchMouseEvent',{type:'mouseMoved',...desktopPoint});
+ await waitFor(`!document.getElementById('traffic-chart-tooltip').hidden`);
+ assert.equal(await evaluate(`document.getElementById('traffic-chart-tooltip').textContent.includes('合计')`),true);
+ await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:10,y:10});
+ await waitFor(`document.getElementById('traffic-chart-tooltip').hidden`);
+ await evaluate(`document.querySelector('[data-region-kind="managed"]').click()`);
+ await waitFor(`document.getElementById('region-dialog').open`);
+ await evaluate(`document.getElementById('region-country').value='US';document.getElementById('region-form').requestSubmit()`);
+ await waitFor(`document.querySelector('#deployed-nodes summary h3').textContent.startsWith('🇺🇸')`);
+ assert.equal(await evaluate('decodeURIComponent(nodeShareLink(nodes[0]).split("#")[1]).startsWith("🇺🇸")'),true);
+
  await evaluate(`document.getElementById('tg-find').click()`);
  await waitFor(`document.getElementById('tg-chats').textContent.includes('Fixture user')`);
  await evaluate(`document.querySelector('[data-chat]').click();document.getElementById('tg-form').requestSubmit()`);
@@ -243,5 +284,28 @@ try{
  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true);
  const telemetryShot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});fs.writeFileSync(dest+'/telemetry-mobile.png',Buffer.from(telemetryShot.data,'base64'));
+ await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
+ await evaluate(`document.getElementById('traffic-module').open=false;document.getElementById('node-module').open=false;document.getElementById('subscription-module').open=false;window.scrollTo({top:0,behavior:"instant"})`);
+ assert.equal(await evaluate('document.getElementById("stat-deployed").textContent'),'1');
+ await evaluate(`document.getElementById('nav-toggle').click()`);
+ assert.equal(await evaluate('document.body.classList.contains("sidebar-collapsed")'),true);
+ await evaluate(`document.getElementById('nav-toggle').click()`);
+ await send('Emulation.setDeviceMetricsOverride',{width:375,height:844,deviceScaleFactor:1,mobile:true});
+ await evaluate(`document.getElementById('nav-toggle').click()`);
+ assert.equal(await evaluate('document.body.classList.contains("mobile-nav-open")'),true);
+ assert.equal(await evaluate('document.getElementById("app-sidebar").contains(document.activeElement)'),true);
+ await evaluate(`document.querySelector('.nav-link[href="#subscription-module"]').click()`);
+ assert.equal(await evaluate('document.getElementById("subscription-module").open'),true);
+ assert.equal(await evaluate('document.body.classList.contains("mobile-nav-open")'),false);
+ await evaluate(`document.getElementById('subscription-module').open=false;window.scrollTo({top:0,behavior:"instant"})`);
+ for(const width of[375,479,480,767,768,1199,1200,1440]){
+  await send('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:width<768});
+  await new Promise(r=>setTimeout(r,180));
+  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true,`no overflow at ${width}`);
+  await evaluate('window.scrollTo({top:0,behavior:"instant"});document.activeElement?.blur()');
+  await new Promise(r=>setTimeout(r,100));
+  if([375,768,1440].includes(width)){const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});fs.writeFileSync(dest+'/redesign-'+width+'.png',Buffer.from(shot.data,'base64'));}
+ }
+ fs.writeFileSync(dest+'/redesign-dom.html',await evaluate('document.documentElement.outerHTML'));
  assert.deepEqual(errors,[]);console.log('UI smoke passed: command enrollment, no SSH secrets, node health, edit/queue settings, probe, logs, deletion, desktop/mobile layout.');
-}finally{ws?.close();child.kill();await new Promise(r=>child.once('exit',r));server.close();fs.rmSync(profile,{recursive:true,force:true});}
+}finally{ws?.close();child.kill();await new Promise(r=>child.once('exit',r));server.close();fs.rmSync(profile,{recursive:true,force:true,maxRetries:10,retryDelay:100});}

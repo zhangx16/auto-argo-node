@@ -15,7 +15,7 @@ from uuid import uuid4
 from fastapi import HTTPException, Request, Header
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, field_validator
-from . import db, deploy, cloudflare, direct_nodes, telemetry
+from . import db, deploy, cloudflare, direct_nodes, telemetry, regions
 
 ROOT=Path(__file__).parent
 LOCK=deploy.START_LOCK
@@ -51,6 +51,7 @@ def init():
     c.commit()
     direct_nodes.init()
     telemetry.init()
+    regions.init()
 
 
 def row(node_id):
@@ -416,6 +417,8 @@ def start_loop():
                     if age(a['last_report_at'])<180 and (age(a['probe_at'])>=300 or a['probe_status']=='pending'):
                         schedule_probe(a['node_id'])
             except Exception:pass
+            try:regions.refresh_pending()
+            except Exception:pass
             try:telemetry.tick()
             except Exception:pass
     LOOP=threading.Thread(target=loop,daemon=True);LOOP.start()
@@ -429,6 +432,7 @@ def register(app,require_login,public_url):
         require_login(request)
         if request.headers.get('origin') and urlparse(request.headers['origin']).netloc!=request.headers.get('host'):
             raise HTTPException(403,'请求来源不匹配')
+    regions.register(app,owner)
     @app.post('/api/agent-nodes')
     def create(body:CreateBody,request:Request):
         owner(request)

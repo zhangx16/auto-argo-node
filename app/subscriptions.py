@@ -14,7 +14,7 @@ from fastapi import HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, field_validator
 
-from . import db, external_nodes, proxy_chains
+from . import db, external_nodes, proxy_chains, telemetry, regions
 from .node_formats import parse_uri, clash_proxy, singbox_outbound, to_uri
 
 Format = Literal['base64', 'raw', 'clash', 'singbox']
@@ -45,6 +45,7 @@ def init():
     columns={r['name'] for r in c.execute('PRAGMA table_info(subscriptions)')}
     if 'chains_json' not in columns:c.execute("ALTER TABLE subscriptions ADD COLUMN chains_json TEXT NOT NULL DEFAULT '[]'")
     if 'chain_only' not in columns:c.execute('ALTER TABLE subscriptions ADD COLUMN chain_only INTEGER NOT NULL DEFAULT 0')
+    if 'traffic_limit_bytes' not in columns:c.execute('ALTER TABLE subscriptions ADD COLUMN traffic_limit_bytes INTEGER NOT NULL DEFAULT 0')
     c.commit()
 
 
@@ -54,6 +55,7 @@ class SubscriptionBody(BaseModel):
     external_node_ids: list[Annotated[int, Field(ge=1)]] = Field(default_factory=list, max_length=1000)
     chains: list[proxy_chains.Chain]=Field(default_factory=list,max_length=30)
     chain_only: bool=False
+    traffic_limit_bytes: int=Field(default=0,ge=0,le=9_000_000_000_000_000)
     enabled: bool = True
     expires_at: str = Field(default='', max_length=40)
 
@@ -132,6 +134,7 @@ def describe(subscription, public_url, secret):
     result.update(chains=chains,chain_only=bool(subscription.get('chain_only')),chain_count=len(chains),chain_errors=errors)
     if chains:
         result['exportable_count']=0 if errors else len(chains)+(0 if result['chain_only'] else result['exportable_count'])
+    result['usage']=usage(subscription,members,imported)
     result['formats']=['clash','singbox'] if chains else list(FORMATS)
     result['urls'] = {fmt: base + '?format=' + fmt for fmt in result['formats']}
     return result
@@ -146,6 +149,8 @@ def save(body, subscription_id=None):
             raise HTTPException(422, '一个订阅最多选择 1000 个节点')
         if subscription_id is not None:
             previous=get(subscription_id)
+            if 'traffic_limit_bytes' not in body.model_fields_set:
+                body=body.model_copy(update={'traffic_limit_bytes':previous.get('traffic_limit_bytes',0)})
             if 'chains' not in body.model_fields_set:
                 body=body.model_copy(update={'chains':[proxy_chains.Chain.model_validate(chain) for chain in proxy_chains.configured(previous)]})
             if 'chain_only' not in body.model_fields_set:
@@ -173,11 +178,46 @@ def save(body, subscription_id=None):
             c.execute('DELETE FROM subscription_nodes WHERE subscription_id=?', (subscription_id,))
             c.execute('DELETE FROM subscription_external_nodes WHERE subscription_id=?', (subscription_id,))
         c.execute('UPDATE subscriptions SET chains_json=?,chain_only=? WHERE id=?',(json.dumps([chain.model_dump() for chain in body.chains],ensure_ascii=False),int(body.chain_only),subscription_id))
+        c.execute('UPDATE subscriptions SET traffic_limit_bytes=? WHERE id=?',(body.traffic_limit_bytes,subscription_id))
         c.executemany('INSERT INTO subscription_nodes VALUES (?,?,?)',
                       [(subscription_id, node_id, pos) for pos, node_id in enumerate(body.node_ids)])
         c.executemany('INSERT INTO subscription_external_nodes VALUES (?,?,?)',
                       [(subscription_id, node_id, pos) for pos, node_id in enumerate(body.external_node_ids)])
     return get(subscription_id)
+
+
+def usage(subscription,members=None,imported=None):
+    members=member_nodes(subscription['id']) if members is None else members
+    imported=external_members(subscription['id']) if imported is None else imported
+    chains=proxy_chains.configured(subscription)
+    used=None
+    if subscription.get('chain_only') and chains:
+        used={(h['kind'],h['id']) for chain in chains for h in chain['hops']}
+    ids={n['id'] for n in members if eligible(n) and (used is None or ('managed',n['id']) in used)}
+    external=sum(bool(n['enabled']) and (used is None or ('external',n['id']) in used) for n in imported)
+    upload=download=measured=stale=0;since=[];now=int(datetime.now(timezone.utc).timestamp())
+    c=db.get_conn()
+    if ids and c.execute("SELECT 1 FROM sqlite_master WHERE name='traffic_totals'").fetchone():
+        rows=c.execute('SELECT t.*,s.sampled_at FROM traffic_totals t LEFT JOIN traffic_samples s ON s.node_id=t.node_id WHERE t.node_id IN ('+','.join('?' for _ in ids)+')',tuple(sorted(ids))).fetchall()
+        for row in rows:
+            upload+=row['rx'];download+=row['tx'];measured+=1
+            stale+=int(not row['sampled_at'] or now-row['sampled_at']>=180)
+            if row['since']:since.append(row['since'])
+    return {'upload':upload,'download':download,'used':upload+download,'total':subscription.get('traffic_limit_bytes',0),
+      'scope':'shared-node-port-aggregate','managed_count':len(ids),'measured_count':measured,'external_count':external,
+      'unmeasured_count':len(ids)-measured+external,'stale_count':stale,'complete':measured==len(ids) and not external and bool(ids),
+      'since':min(since) if since else '', 'note':'所选自建节点自启用采集以来的共享总量，包含其他订阅/连接；外部节点未计入，链路节点分别计数。额度仅作展示，不限制服务器转发。'}
+
+
+def usage_headers(subscription):
+    u=usage(subscription);headers={'X-Traffic-Scope':u['scope'],'X-Traffic-Coverage':'complete' if u['complete'] else 'partial'}
+    values=[]
+    if u['measured_count']:
+        values=[f"upload={u['upload']}",f"download={u['download']}",f"total={u['total']}"]
+    if subscription.get('expires_at'):
+        values.append('expire='+str(int(datetime.fromisoformat(subscription['expires_at'].replace('Z','+00:00')).timestamp())))
+    if values:headers['Subscription-Userinfo']='; '.join(values)
+    return headers
 
 
 def parse_node(node, name):
@@ -199,11 +239,13 @@ def render(subscription, fmt):
     parsed, links = [], []
     parsed_by_ref={}
     for n in members:
-        name = n['remark'] or f"节点 {n['id']}"
+        name = regions.enrich(n,'external' if n.get('source_kind')=='external' else 'managed')['display_name'][:80] or f"节点 {n['id']}"
         if name in used:
-            name = f"{name} [{'外部' if n.get('source_kind') == 'external' else ''}{n['id']}]"
+            suffix=f" [{'外部' if n.get('source_kind') == 'external' else ''}{n['id']}]"
+            name=name[:80-len(suffix)]+suffix
+        base_name=name;counter=1
         while name in used:
-            name += '_'
+            suffix='_'+str(counter);name=base_name[:80-len(suffix)]+suffix;counter+=1
         used.add(name)
         try:
             parsed.append(parse_node(n, name))
@@ -247,7 +289,7 @@ def register(app, require_login, public_url, secret):
         text, media, ext, count = render(subscription, fmt)
         disposition = 'attachment' if download else 'inline'
         return Response(text, media_type=media, headers={
-            'Cache-Control': 'no-store', 'profile-update-interval': '1',
+            **usage_headers(subscription), 'Cache-Control': 'no-store', 'profile-update-interval': '1',
             'profile-title': 'base64:' + base64.b64encode(subscription['name'].encode()).decode(),
             'Content-Disposition': f'{disposition}; filename="subscription-{subscription["id"]}.{ext}"',
             'X-Subscription-Node-Count': str(count), 'X-Content-Type-Options': 'nosniff',

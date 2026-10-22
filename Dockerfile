@@ -13,6 +13,8 @@ COPY scripts/fetch-probe-core.sh scripts/fetch-installer.sh /app/scripts/
 RUN sh /app/scripts/fetch-probe-core.sh
 
 COPY app /app/app
+COPY scripts/fetch-geoip.py /app/scripts/
+RUN python /app/scripts/fetch-geoip.py
 RUN sh /app/scripts/fetch-installer.sh
 
 ENV PYTHONUNBUFFERED=1 \

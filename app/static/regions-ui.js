@@ -1,0 +1,13 @@
+'use strict';
+window.nodeLabel=n=>n.display_name||((n.country_flag?n.country_flag+' ':'')+(n.remark||n.name||''));
+window.nodeShareLink=n=>n.country_code&&/^(vless|hysteria2):/.test(n.share_link||'')?n.share_link.split('#')[0]+'#'+encodeURIComponent(nodeLabel(n)):n.share_link;
+(()=>{
+ const dialog=document.getElementById('region-dialog');if(!dialog)return;
+ const $=id=>document.getElementById(id);let editing=null,countries=null;
+ const names=typeof Intl.DisplayNames==='function'?new Intl.DisplayNames(['zh-CN'],{type:'region'}):null;
+ const countryName=(code,fallback)=>code==='ZZ'?'未指定 / 不显示旗帜':(names?.of(code)||fallback);
+ async function choices(){if(countries)return;const r=await fetch('/api/regions',{credentials:'same-origin'});if(!r.ok)throw Error('地区列表加载失败');countries=await r.json();const select=$('region-country');select.replaceChildren(new Option('自动识别（使用服务器 IP）',''));Object.entries(countries.countries).sort((a,b)=>countryName(a[0],a[1]).localeCompare(countryName(b[0],b[1]),'zh-CN')).forEach(([code,name])=>select.add(new Option(countryName(code,name)+' · '+code,code)));}
+ $('close-region').onclick=()=>dialog.close();
+ document.addEventListener('click',async e=>{const b=e.target.closest('[data-region-kind]');if(!b)return;editing={kind:b.dataset.regionKind,id:Number(b.dataset.regionId)};b.disabled=true;try{await choices();const raw=editing.kind==='managed'?nodes.find(n=>n.id===editing.id):null;const n=raw||{country_code:b.dataset.country||'',country_source:b.dataset.countrySource||'auto'};$('region-node-name').textContent=b.dataset.regionName||n.remark||'节点';$('region-country').value=n.country_source==='manual'?n.country_code:'';$('region-current').textContent=n.country_ip?`自动识别：${n.country_auto?countryName(n.country_auto,n.country_auto):'尚未识别'} · ${n.country_ip}`:'IP 库按服务器公网 IP 识别，结果可能与实际地区不同，可手动指定。';$('region-error').hidden=true;dialog.showModal();}catch(e){alert(e.message);}finally{b.disabled=false;}});
+ $('region-form').onsubmit=async e=>{e.preventDefault();if(!editing)return;$('region-save').disabled=true;$('region-error').hidden=true;try{const r=await fetch(`/api/regions/${editing.kind}/${editing.id}`,{method:'PUT',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({country_code:$('region-country').value||null})});const d=await r.json();if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:'地区保存失败');dialog.close();await load();document.dispatchEvent(new Event('regions-updated'));}catch(e){$('region-error').textContent=e.message;$('region-error').hidden=false;}finally{$('region-save').disabled=false;}};
+})();

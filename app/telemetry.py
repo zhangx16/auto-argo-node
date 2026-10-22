@@ -3,8 +3,8 @@ import json
 import re
 import time
 import urllib.request
-from datetime import datetime, timezone
-from fastapi import HTTPException, Request
+from datetime import datetime, timezone, timedelta
+from fastapi import HTTPException, Request, Query
 from pydantic import BaseModel, Field, SecretStr
 from . import db, cloudflare
 
@@ -29,11 +29,13 @@ def init():
       epoch TEXT NOT NULL, rx INTEGER NOT NULL, tx INTEGER NOT NULL, sampled_at INTEGER NOT NULL);
     CREATE TABLE IF NOT EXISTS traffic_daily(node_id INTEGER NOT NULL REFERENCES nodes(id) ON DELETE CASCADE,
       day TEXT NOT NULL, rx INTEGER NOT NULL DEFAULT 0, tx INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(node_id,day));
+    CREATE TABLE IF NOT EXISTS traffic_totals(node_id INTEGER PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE, rx INTEGER NOT NULL DEFAULT 0, tx INTEGER NOT NULL DEFAULT 0, since TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS notification_states(node_id INTEGER PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
       state TEXT NOT NULL, pending_state TEXT NOT NULL DEFAULT '', pending_since INTEGER NOT NULL DEFAULT 0);
     CREATE TABLE IF NOT EXISTS notification_queue(id INTEGER PRIMARY KEY, event_key TEXT NOT NULL UNIQUE,
       text TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, due INTEGER NOT NULL, created INTEGER NOT NULL);
     ''')
+    db.get_conn().execute('INSERT OR IGNORE INTO traffic_totals SELECT node_id,sum(rx),sum(tx),min(day) FROM traffic_daily GROUP BY node_id')
     db.get_conn().commit()
 
 
@@ -95,11 +97,12 @@ def record(node_id,sample):
     c.execute('INSERT OR REPLACE INTO traffic_samples VALUES (?,?,?,?,?)',(node_id,sample.epoch,sample.rx,sample.tx,now))
     day=datetime.fromtimestamp(now,timezone.utc).strftime('%Y-%m-%d')
     c.execute('INSERT INTO traffic_daily VALUES (?,?,?,?) ON CONFLICT(node_id,day) DO UPDATE SET rx=rx+excluded.rx,tx=tx+excluded.tx',(node_id,day,rx,tx))
+    c.execute('INSERT INTO traffic_totals VALUES (?,?,?,?) ON CONFLICT(node_id) DO UPDATE SET rx=rx+excluded.rx,tx=tx+excluded.tx',(node_id,rx,tx,day))
     # Daily aggregates only: bounded to 400 days, no minute-level history.
     c.execute("DELETE FROM traffic_daily WHERE day<date('now','-400 days')")
 
 
-def summary():
+def summary(days=7,node_id=None):
     c=db.get_conn();today=datetime.now(timezone.utc).strftime('%Y-%m-%d');month=today[:7]
     rows=c.execute('''SELECT n.id,n.remark,a.agent_version,s.sampled_at,
       coalesce(sum(d.rx),0) rx,coalesce(sum(d.tx),0) tx,
@@ -111,10 +114,30 @@ def summary():
       LEFT JOIN traffic_samples s ON s.node_id=n.id LEFT JOIN traffic_daily d ON d.node_id=n.id
       GROUP BY n.id ORDER BY n.id''',(today,today,month,month)).fetchall()
     nodes=[dict(r) for r in rows];now=int(time.time())
-    for n in nodes:n['available']=bool(n['sampled_at'] and now-n['sampled_at']<180)
+    from . import regions
+    totals={r['node_id']:dict(r) for r in c.execute('SELECT * FROM traffic_totals')}
+    for n in nodes:
+        n['available']=bool(n['sampled_at'] and now-n['sampled_at']<180)
+        total=totals.get(n['id'],{})
+        n['rx']=total.get('rx',n['rx']);n['tx']=total.get('tx',n['tx']);n['since']=total.get('since','')
+        n.update({k:v for k,v in regions.enrich(n).items() if k.startswith('country_') or k=='display_name'})
     keys=['rx','tx','today_rx','today_tx','month_rx','month_tx']
-    return {'nodes':nodes,'totals':{k:sum(n[k] for n in nodes) for k in keys},'timezone':'UTC',
+    return {'nodes':nodes,'totals':{k:sum(n[k] for n in nodes) for k in keys},'timezone':'UTC','history':history(days,node_id),
       'scope':'需要节点 v4 脚本、nftables 和 NET_ADMIN 权限。节点监听端口 IN + OUT（Argo 为本地隧道到 sing-box 的流量），不等于网卡或厂商账单；从启用采集后累计，保留 400 天日汇总。'}
+
+
+def history(days=7,node_id=None):
+    if not 1<=days<=400:raise HTTPException(422,'时间范围必须为 1–400 天')
+    c=db.get_conn()
+    if node_id is not None and not db.get_node(node_id):raise HTTPException(404,'节点不存在')
+    end=datetime.now(timezone.utc).date();start=end-timedelta(days=days-1)
+    rows=c.execute('SELECT day,sum(rx) rx,sum(tx) tx FROM traffic_daily WHERE day>=? AND day<=?'+(' AND node_id=?' if node_id else '')+' GROUP BY day ORDER BY day',
+      (start.isoformat(),end.isoformat(),node_id) if node_id else (start.isoformat(),end.isoformat())).fetchall()
+    by_day={r['day']:dict(r) for r in rows}
+    return {'days':days,'node_id':node_id,'timezone':'UTC','points':[{'date':(start+timedelta(days=i)).isoformat(),
+      'rx':by_day.get((start+timedelta(days=i)).isoformat(),{}).get('rx',0),
+      'tx':by_day.get((start+timedelta(days=i)).isoformat(),{}).get('tx',0),
+      'measured':(start+timedelta(days=i)).isoformat() in by_day} for i in range(days)]}
 
 
 def enqueue(key,text):
@@ -197,7 +220,8 @@ def register(app,require_login):
         if not c.get('chat_id'):raise HTTPException(400,'请先绑定通知聊天')
         telegram('sendMessage',{'chat_id':c['chat_id'],'text':'✅ Argo 面板通知已连接。\n'+summary_text()});return {'ok':True}
     @app.get('/api/traffic')
-    def get_traffic(request:Request):owner(request);return summary()
+    def get_traffic(request:Request,days:int=Query(default=7,ge=1,le=400),node_id:int|None=Query(default=None,ge=1)):
+        owner(request);return summary(days,node_id)
     @app.post('/api/traffic/notify')
     def notify(request:Request):
         owner(request);c=config()

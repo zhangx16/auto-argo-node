@@ -31,3 +31,11 @@ architecture from https://github.com/SagerNet/sing-box and verifies the release
 asset SHA-256 digest returned by GitHub. The image uses it only for bounded
 Reality/Hysteria2 forwarding checks. The binary is not committed to this source
 repository; upstream terms and licenses apply to downloaded components.
+
+## UI references and typography
+
+The management UI adapts the design language of shadcn/ui dashboard-01 and login-01 (new-york-v4): https://ui.shadcn.com/ . shadcn/ui is distributed under the MIT license: https://github.com/shadcn-ui/ui/blob/main/LICENSE.md . The locally bundled Geist Latin font subset is distributed under the SIL Open Font License 1.1; see `app/static/fonts/OFL.txt`.
+
+## DB-IP Country Lite
+
+Country inference uses DB-IP Country Lite 2026-10 (CC BY 4.0), downloaded and SHA-256 verified at image build. The web interface provides the required attribution link: https://db-ip.com . License: https://creativecommons.org/licenses/by/4.0/ . `maxminddb` reads this database with memory mapping in the panel process; no GeoIP database is installed on node servers.

@@ -73,7 +73,8 @@ def fingerprint(p):
 
 
 def describe(row):
-    return {k: bool(v) if k == 'enabled' else v for k, v in dict(row).items() if k != 'fingerprint'}
+    from . import regions
+    return regions.enrich({k: bool(v) if k == 'enabled' else v for k, v in dict(row).items() if k != 'fingerprint'},'external')
 
 
 class LimitedLoader(yaml.SafeLoader):

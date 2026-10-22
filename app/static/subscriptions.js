@@ -6,12 +6,14 @@
  const choices=new Map(),opened=new Set(),externalOpened=new Set();
  const fail=e=>{byId('subscription-error').textContent=e.message||String(e);byId('subscription-error').hidden=false;};
  function formatOptions(selected='base64',allowed=Object.keys(formats)){return Object.entries(formats).filter(([key])=>allowed.includes(key)).map(([k,v])=>`<option value="${k}" ${k===selected?'selected':''}>${v}</option>`).join('');}
+ const bytes=n=>{let v=Number(n||0),i=0;const units=['B','KiB','MiB','GiB','TiB'];while(v>=1024&&i<4){v/=1024;i++;}return v.toFixed(i?2:0)+' '+units[i];};
+ function usageView(s){const u=s.usage;if(!u)return '';const ratio=u.total?Math.min(100,u.used/u.total*100):0;return `<section class="subscription-usage" aria-label="订阅流量用量"><div class="usage-heading"><strong>${u.measured_count?'已统计 '+bytes(u.used):'尚无可统计用量'}</strong><span>${u.total?'参考额度 '+bytes(u.total):'未设置展示额度'}</span></div>${u.total?`<progress max="100" value="${ratio}" aria-label="已统计用量占展示额度百分比">${ratio.toFixed(1)}%</progress>`:''}<p class="meta">节点入口 IN ${bytes(u.upload)} / OUT ${bytes(u.download)} · 已采集 ${u.measured_count}/${u.managed_count} 个自建节点${u.external_count?' · '+u.external_count+' 个外部节点未计入':''}${u.stale_count?' · '+u.stale_count+' 个采集已过期':''}</p><p class="meta">共享节点统计，并非此订阅的独立用量${u.since?' · 自 '+escape(u.since)+' 起':''}；多个订阅引用相同节点时共用总量。展示额度不限制实际流量。</p></section>`;}
  function draw(){
   document.querySelectorAll('.subscription-item').forEach(d=>{if(d.open)opened.add(d.dataset.id);else opened.delete(d.dataset.id);});
   byId('subscription-count').textContent=subscriptions.length;
   byId('subscription-list').innerHTML=subscriptions.length?subscriptions.map(s=>{
    const allowed=s.formats||Object.keys(s.urls);let fmt=choices.get(s.id)||(allowed.includes('base64')?'base64':allowed[0])||'base64';if(!allowed.includes(fmt))fmt=allowed[0];choices.set(s.id,fmt);
-   return `<article class="task"><details class="task-details subscription-item" data-id="${s.id}" ${opened.has(String(s.id))?'open':''}><summary><h3>${escape(s.name)}</h3><span class="badge ${s.enabled&&!s.expired?'online':'offline'}">${!s.enabled?'已停用':s.expired?'已到期':s.exportable_count+' 个节点'}</span></summary><p class="meta">已选择 ${s.node_count} 个节点 · 当前可导出 ${s.exportable_count} 个${s.chain_count?' · 链式 '+s.chain_count+' 条':''}${s.expires_at?' · 到期 '+escape(timeText(s.expires_at)):''}</p>${s.chain_errors?.length?`<p class="error">${escape(s.chain_errors.join('；'))}</p>`:''}<div class="field"><label for="sub-format-${s.id}">订阅格式</label><select id="sub-format-${s.id}" data-sub-format="${s.id}">${formatOptions(fmt,allowed)}</select></div><input class="subscription-url" aria-label="${escape(s.name)}订阅地址" value="${escape(s.urls[fmt])}" readonly><div class="task-actions"><button class="ghost" data-sub-action="copy" data-id="${s.id}">复制订阅地址</button><button class="ghost" data-sub-action="preview" data-id="${s.id}">预览内容</button><button class="ghost" data-sub-action="download" data-id="${s.id}">下载配置</button><button class="ghost" data-sub-action="edit" data-id="${s.id}">编辑节点选择</button><button class="ghost" data-sub-action="toggle" data-id="${s.id}">${s.enabled?'停用订阅':'启用订阅'}</button><button class="ghost" data-sub-action="rotate" data-id="${s.id}">重置订阅地址</button><button class="ghost" data-sub-action="delete" data-id="${s.id}">删除订阅</button></div></details></article>`;
+   return `<article class="task"><details class="task-details subscription-item" data-id="${s.id}" ${opened.has(String(s.id))?'open':''}><summary><h3>${escape(s.name)}</h3><span class="badge ${s.enabled&&!s.expired?'online':'offline'}">${!s.enabled?'已停用':s.expired?'已到期':s.exportable_count+' 个节点'}</span></summary><p class="meta">已选择 ${s.node_count} 个节点 · 当前可导出 ${s.exportable_count} 个${s.chain_count?' · 链式 '+s.chain_count+' 条':''}${s.expires_at?' · 到期 '+escape(timeText(s.expires_at)):''}</p>${usageView(s)}${s.chain_errors?.length?`<p class="error">${escape(s.chain_errors.join('；'))}</p>`:''}<div class="field"><label for="sub-format-${s.id}">订阅格式</label><select id="sub-format-${s.id}" data-sub-format="${s.id}">${formatOptions(fmt,allowed)}</select></div><input class="subscription-url" aria-label="${escape(s.name)}订阅地址" value="${escape(s.urls[fmt])}" readonly><div class="task-actions"><button class="ghost" data-sub-action="copy" data-id="${s.id}">复制订阅地址</button><button class="ghost" data-sub-action="preview" data-id="${s.id}">预览内容</button><button class="ghost" data-sub-action="download" data-id="${s.id}">下载配置</button><button class="ghost" data-sub-action="edit" data-id="${s.id}">编辑节点选择</button><button class="ghost" data-sub-action="toggle" data-id="${s.id}">${s.enabled?'停用订阅':'启用订阅'}</button><button class="ghost" data-sub-action="rotate" data-id="${s.id}">重置订阅地址</button><button class="ghost" data-sub-action="delete" data-id="${s.id}">删除订阅</button></div></details></article>`;
   }).join(''):'<p class="empty">创建一个订阅，勾选要导出的节点。</p>';
  }
  async function loadSubscriptions(force=false){
@@ -56,6 +58,7 @@
  function openEditor(s=null){
   editing=s;editingChains=JSON.parse(JSON.stringify(s?.chains||[]));byId('sub-chain-only').checked=!!s?.chain_only;
   byId('subscription-editor-title').textContent=s?'编辑订阅':'创建订阅';
+  byId('sub-traffic-limit').value=s?.traffic_limit_bytes?String(s.traffic_limit_bytes/1024**3):'';
   byId('sub-name').value=s?.name||'';byId('sub-enabled').checked=s?s.enabled:true;
   const dt=s?.expires_at?new Date(s.expires_at):null;
   byId('sub-expires').value=dt?new Date(dt.getTime()-dt.getTimezoneOffset()*60000).toISOString().slice(0,16):'';
@@ -63,9 +66,9 @@
   const selected=new Set(s?.node_ids||[]);
   const externalSelected=new Set(s?.external_node_ids||[]);
   const available=nodes.filter(n=>n.share_link&&!['uninstalling','removed'].includes(n.status));
-  byId('sub-node-picker').innerHTML=available.length?available.map(n=>`<label class="subscription-node"><input type="checkbox" data-kind="managed" value="${n.id}" ${selected.has(n.id)?'checked':''}><span><strong>${escape(n.remark)}</strong><small>自建 #${n.id} · ${escape(state[n.status]||n.status)} · ${escape(n.client_address||n.sni)}</small></span></label>`).join(''):'<p class="meta">暂无可选择的已部署节点。部署完成后可再次编辑。</p>';
+  byId('sub-node-picker').innerHTML=available.length?available.map(n=>`<label class="subscription-node"><input type="checkbox" data-kind="managed" value="${n.id}" ${selected.has(n.id)?'checked':''}><span><strong>${escape(nodeLabel(n))}</strong><small>自建 #${n.id} · ${escape(state[n.status]||n.status)} · ${escape(n.client_address||n.sni)}</small></span></label>`).join(''):'<p class="meta">暂无可选择的已部署节点。部署完成后可再次编辑。</p>';
   const imported=externalNodes.filter(n=>n.enabled);
-  if(imported.length){if(!available.length)byId('sub-node-picker').innerHTML='';byId('sub-node-picker').insertAdjacentHTML('beforeend',imported.map(n=>`<label class="subscription-node"><input type="checkbox" data-kind="external" value="${n.id}" ${externalSelected.has(n.id)?'checked':''}><span><strong>${escape(n.name)}</strong><small>外部 #${n.id} · ${escape(n.protocol.toUpperCase())} · ${escape(n.server)}:${n.port}</small></span></label>`).join(''));}
+  if(imported.length){if(!available.length)byId('sub-node-picker').innerHTML='';byId('sub-node-picker').insertAdjacentHTML('beforeend',imported.map(n=>`<label class="subscription-node"><input type="checkbox" data-kind="external" value="${n.id}" ${externalSelected.has(n.id)?'checked':''}><span><strong>${escape(nodeLabel(n))}</strong><small>外部 #${n.id} · ${escape(n.protocol.toUpperCase())} · ${escape(n.server)}:${n.port}</small></span></label>`).join(''));}
   countSelected();byId('subscription-editor').showModal();
  }
  byId('new-subscription').onclick=()=>openEditor();
@@ -79,6 +82,7 @@
  byId('subscription-form').onsubmit=async e=>{
   e.preventDefault();byId('save-subscription').disabled=true;byId('sub-edit-error').hidden=true;
   const body={name:byId('sub-name').value.trim(),enabled:byId('sub-enabled').checked,expires_at:byId('sub-expires').value?new Date(byId('sub-expires').value).toISOString():'',node_ids:[...byId('sub-node-picker').querySelectorAll('input[data-kind=managed]:checked')].map(i=>Number(i.value)),external_node_ids:[...byId('sub-node-picker').querySelectorAll('input[data-kind=external]:checked')].map(i=>Number(i.value))};
+  body.traffic_limit_bytes=Math.round(Number(byId('sub-traffic-limit').value||0)*1024**3);
   body.chains=editingChains;body.chain_only=byId('sub-chain-only').checked;
   try{await api(editing?`/api/subscriptions/${editing.id}`:'/api/subscriptions',{method:editing?'PUT':'POST',body:JSON.stringify(body)});byId('subscription-editor').close();await loadSubscriptions(true);}
   catch(e){byId('sub-edit-error').textContent=e.message;byId('sub-edit-error').hidden=false;}finally{byId('save-subscription').disabled=false;}
@@ -94,7 +98,7 @@
     case 'edit':openEditor(s);break;
     case 'preview':{const d=await api(`/api/subscriptions/${s.id}/preview?format=${fmt}`);byId('sub-preview-title').textContent=`${s.name} · ${formats[fmt]}`;byId('sub-preview-content').textContent=d.content;byId('subscription-preview').showModal();break;}
     case 'download':{await api(`/api/subscriptions/${s.id}/preview?format=${fmt}`);const a=document.createElement('a');a.href=`/api/subscriptions/${s.id}/export?format=${fmt}`;a.download='';document.body.appendChild(a);a.click();a.remove();break;}
-    case 'toggle':await api(`/api/subscriptions/${s.id}`,{method:'PUT',body:JSON.stringify({name:s.name,node_ids:s.node_ids,external_node_ids:s.external_node_ids||[],enabled:!s.enabled,expires_at:s.expires_at,chains:s.chains||[],chain_only:!!s.chain_only})});await loadSubscriptions(true);break;
+    case 'toggle':await api(`/api/subscriptions/${s.id}`,{method:'PUT',body:JSON.stringify({name:s.name,node_ids:s.node_ids,external_node_ids:s.external_node_ids||[],enabled:!s.enabled,expires_at:s.expires_at,chains:s.chains||[],chain_only:!!s.chain_only,traffic_limit_bytes:s.traffic_limit_bytes||0})});await loadSubscriptions(true);break;
     case 'rotate':if(confirm('重置后原订阅地址立即失效，需要在客户端重新导入。继续？')){await api(`/api/subscriptions/${s.id}/rotate`,{method:'POST'});await loadSubscriptions(true);}break;
     case 'delete':if(confirm(`删除订阅「${s.name}」？此操作会使订阅地址失效，节点本身保留。`)){await api(`/api/subscriptions/${s.id}`,{method:'DELETE'});opened.delete(String(s.id));choices.delete(s.id);await loadSubscriptions(true);}break;
    }
@@ -105,7 +109,7 @@
  function drawExternal(){
   document.querySelectorAll('.external-item').forEach(d=>{if(d.open)externalOpened.add(d.dataset.id);else externalOpened.delete(d.dataset.id);});
   byId('external-count').textContent=externalNodes.length;
-  byId('external-list').innerHTML=externalNodes.length?externalNodes.map(n=>`<article class="task"><details class="task-details external-item" data-id="${n.id}" ${externalOpened.has(String(n.id))?'open':''}><summary><h3>${escape(n.name)}</h3><span class="badge ${n.enabled?'online':'offline'}">${escape(n.protocol.toUpperCase())} · ${n.enabled?'已启用':'已停用'}</span></summary><p class="meta">${escape(n.server)}:${n.port}${n.source_label?' · 来源 '+escape(n.source_label):''}</p><p class="meta">仅用于订阅导出，不参与服务器部署、监控或自动修复。</p><div class="task-actions"><button class="ghost" data-external-action="edit" data-id="${n.id}">编辑节点</button><button class="ghost" data-external-action="toggle" data-id="${n.id}">${n.enabled?'停用':'启用'}</button><button class="ghost" data-external-action="delete" data-id="${n.id}">删除外部节点</button></div></details></article>`).join(''):'<p class="empty">尚未导入外部节点。</p>';
+  byId('external-list').innerHTML=externalNodes.length?externalNodes.map(n=>`<article class="task"><details class="task-details external-item" data-id="${n.id}" ${externalOpened.has(String(n.id))?'open':''}><summary><h3>${escape(nodeLabel(n))}</h3><span class="badge ${n.enabled?'online':'offline'}">${escape(n.protocol.toUpperCase())} · ${n.enabled?'已启用':'已停用'}</span></summary><p class="meta">${escape(n.server)}:${n.port}${n.source_label?' · 来源 '+escape(n.source_label):''}</p><p class="meta">仅用于订阅导出，不参与服务器部署、监控或自动修复。</p><div class="task-actions"><button class="ghost" data-external-action="edit" data-id="${n.id}">编辑节点</button><button class="ghost" data-external-action="toggle" data-id="${n.id}">${n.enabled?'停用':'启用'}</button><button class="ghost" type="button" data-region-kind="external" data-region-id="${n.id}" data-region-name="${escape(n.name)}" data-country="${escape(n.country_code||'')}" data-country-source="${escape(n.country_source||'auto')}">设置地区</button><button class="ghost" data-external-action="delete" data-id="${n.id}">删除外部节点</button></div></details></article>`).join(''):'<p class="empty">尚未导入外部节点。</p>';
  }
  function importSourceChanged(){const url=byId('external-import-mode').value==='url';byId('external-content-field').hidden=url;byId('external-url-field').hidden=!url;clearImportPreview();}
  function clearImportPreview(){importCandidates=[];byId('external-import-preview').innerHTML='';byId('external-import-report').textContent='';byId('confirm-external-import').disabled=true;}
@@ -121,7 +125,7 @@
    const result=await api('/api/external-nodes/preview',{method:'POST',body:JSON.stringify(body)});
    importCandidates=result.nodes;
    byId('external-import-report').textContent=`解析 ${result.total} 项，可导入 ${result.nodes.length} 个，重复 ${result.duplicates} 个，无效或不支持 ${result.invalid_count} 项。`;
-   byId('external-import-preview').innerHTML=result.nodes.map((n,i)=>`<label class="subscription-node"><input type="checkbox" value="${i}" checked><span><strong>${escape(n.name)}</strong><small>${escape(n.protocol.toUpperCase())} · ${escape(n.server)}:${n.port}</small></span></label>`).join('')+(result.errors.length?`<p class="error">${result.errors.map(e=>'第 '+e.index+' 项：'+escape(e.message)).join('<br>')}</p>`:'');
+   byId('external-import-preview').innerHTML=result.nodes.map((n,i)=>`<label class="subscription-node"><input type="checkbox" value="${i}" checked><span><strong>${escape(nodeLabel(n))}</strong><small>${escape(n.protocol.toUpperCase())} · ${escape(n.server)}:${n.port}</small></span></label>`).join('')+(result.errors.length?`<p class="error">${result.errors.map(e=>'第 '+e.index+' 项：'+escape(e.message)).join('<br>')}</p>`:'');
    byId('confirm-external-import').disabled=!result.nodes.length;
   }catch(e){byId('external-import-error').textContent=e.message;byId('external-import-error').hidden=false;}finally{byId('parse-external-import').disabled=false;}
  };
@@ -147,6 +151,7 @@
   try{await api(`/api/external-nodes/${editingExternal.id}`,{method:'PUT',body:JSON.stringify({name:byId('external-edit-name').value.trim(),uri:byId('external-edit-uri').value.trim(),enabled:byId('external-edit-enabled').checked})});byId('external-node-editor').close();await loadSubscriptions(true);}
   catch(e){byId('external-edit-error').textContent=e.message;byId('external-edit-error').hidden=false;}finally{byId('save-external-node').disabled=false;}
  };
+ document.addEventListener('regions-updated',()=>loadSubscriptions(true).catch(fail));
  byId('subscription-module').addEventListener('toggle',()=>{if(byId('subscription-module').open)loadSubscriptions(true);});
  document.addEventListener('nodes-updated',()=>{if(byId('subscription-module').open)loadSubscriptions();});
  loadSubscriptions(true);

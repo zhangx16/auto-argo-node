@@ -179,7 +179,8 @@ def enrich(node):
         node.update(dict(row))
         node['protocol'] = 'vless-ws-argo'
     from . import agent
-    return agent.enrich(node)
+    from . import regions
+    return regions.enrich(agent.enrich(node))
 
 
 def installer_text():

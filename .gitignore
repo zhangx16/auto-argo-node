@@ -21,3 +21,6 @@ __pycache__/
 venv/
 node_modules/
 .DS_Store
+
+# Downloaded local GeoIP database
+app/vendor/*.mmdb
