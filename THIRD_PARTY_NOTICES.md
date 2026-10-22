@@ -23,3 +23,11 @@ all runtime binary versions or make installation independent of external service
 Python packages are listed with exact versions in `requirements.txt`. Their upstream
 licenses continue to apply. No runtime credentials, production database, server backup,
 or user node configuration is included in this repository.
+
+## Panel protocol probe
+
+The Docker build downloads the official sing-box v1.14.3 release for the build
+architecture from https://github.com/SagerNet/sing-box and verifies the release
+asset SHA-256 digest returned by GitHub. The image uses it only for bounded
+Reality/Hysteria2 forwarding checks. The binary is not committed to this source
+repository; upstream terms and licenses apply to downloaded components.

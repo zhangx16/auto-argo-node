@@ -4,8 +4,8 @@ set -e
 DIR="$1"
 MODE="$2"
 PORT=$(jq -r '.port' "$DIR/settings.json")
-[[ "$PORT" =~ ^[0-9]+$ ]] && [ "$PORT" -ge 1024 ] && [ "$PORT" -le 65535 ] || exit 1
-source /usr/local/lib/argo-deploy/library.sh agent-library
+[[ "$PORT" =~ ^[0-9]+$ ]] && [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] || exit 1
+if source /usr/local/lib/argo-deploy/library.sh agent-library; then :; else exit 1; fi
 SELF_SCRIPT_PATH=/usr/local/bin/sb
 SCRIPT_DIR=/usr/local/bin
 _detect_init_system
@@ -15,6 +15,16 @@ exec 7>"$RUNTIME_DIR/argo-keepalive.lock"
 flock -n 7 || exit 0
 repair_locked() {
  local tag="argo-vless-ws-${PORT}" domain old_pid
+ if jq -e --arg t "$tag" '.[$t] | select(.type=="fixed" and .manager=="argo-deploy-fixed")' "$ARGO_METADATA_FILE" >/dev/null; then
+  source /usr/local/lib/argo-deploy/fixed.sh
+  fixed_credentials || return 1
+  [ "$FIXED_HOST" = "$(jq -r --arg t "$tag" '.[$t].domain' "$ARGO_METADATA_FILE")" ] || return 1
+  old_pid=$(cat "$(_argo_pid_file "$PORT")" 2>/dev/null || true)
+  fixed_stop_pid "$old_pid" || return 1
+  fixed_launch "$(_argo_pid_file "$PORT")" "$(_argo_log_file "$PORT")" || return 1
+  fixed_wait "$(jq -r --arg t "$tag" '.[$t].path' "$ARGO_METADATA_FILE")"
+  return $?
+ fi
  jq -e --arg t "$tag" '.[$t] | select(.type=="temp" and .protocol=="vless-ws")' "$ARGO_METADATA_FILE" >/dev/null || return 1
  old_pid=$(cat "$(_argo_pid_file "$PORT")" 2>/dev/null || true)
  _stop_argo_tunnel "$PORT" || return 1

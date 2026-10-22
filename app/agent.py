@@ -9,12 +9,13 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
+from typing import Literal
 from uuid import uuid4
 
 from fastapi import HTTPException, Request, Header
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, field_validator
-from . import db, deploy
+from . import db, deploy, cloudflare, direct_nodes, telemetry
 
 ROOT=Path(__file__).parent
 LOCK=deploy.START_LOCK
@@ -45,7 +46,11 @@ def init():
         revision INTEGER NOT NULL, operation TEXT NOT NULL, config_json TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'queued', created_at TEXT NOT NULL, finished_at TEXT NOT NULL DEFAULT '',
         PRIMARY KEY(node_id,revision));''')
+    if 'agent_version' not in [x['name'] for x in c.execute('PRAGMA table_info(node_agents)')]:
+        c.execute('ALTER TABLE node_agents ADD COLUMN agent_version INTEGER NOT NULL DEFAULT 1')
     c.commit()
+    direct_nodes.init()
+    telemetry.init()
 
 
 def row(node_id):
@@ -74,11 +79,31 @@ def enrich(node):
     if a['bound'] and age(a['last_report_at'])>180:
         node['health_status']='offline'
         node['status']='offline'
+    b=cloudflare.binding(node['id'])
+    desired=json.loads(a['desired_json'])
+    node['protocol']=desired.get('protocol','vless-ws-argo')
+    mode='fixed' if (b and b['status']=='active') or (not node.get('share_link') and desired.get('tunnel_mode')=='fixed') else 'temp'
+    node.update(agent_version=a.get('agent_version',1),tunnel_mode=mode,fixed_hostname=b['hostname'] if b else desired.get('fixed_hostname',''),fixed_status=b['status'] if b else '')
     node.pop('install_cmd',None);node.pop('uninstall_cmd',None)
     return node
 
 
-class CreateBody(deploy.NodeEditBody):
+class AgentEditBody(deploy.NodeEditBody):
+    node_port: int=Field(ge=1,le=65535)
+    @field_validator('client_port')
+    @classmethod
+    def port_valid(cls,v):
+        if not 1<=v<=65535:raise ValueError('客户端端口应为 1–65535')
+        return v
+
+class CreateBody(AgentEditBody):
+    protocol: Literal['vless-ws-argo','reality','hysteria2']='vless-ws-argo'
+    server_name: str=Field(default='www.amd.com',pattern=r'^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$',max_length=253)
+    @field_validator('server_name')
+    @classmethod
+    def normalize_sni(cls,v):return v.lower()
+    tunnel_mode: Literal['temp','fixed']='temp'
+    fixed_hostname: str=Field(default='',max_length=253)
     ws_path: str=Field(default='',max_length=128)
     uuid: str=Field(default='',max_length=36)
     @field_validator('ws_path')
@@ -88,6 +113,9 @@ class CreateBody(deploy.NodeEditBody):
     @classmethod
     def uuid_valid(cls,v):return deploy.DeployBody.uuid_valid(v)
 
+class FixedBody(BaseModel):
+    hostname: str=Field(default='',max_length=253)
+
 class EnrollBody(BaseModel):
     enrollment_token: str=Field(min_length=20,max_length=128)
     hostname: str=Field(default='',max_length=253)
@@ -96,15 +124,21 @@ class EnrollBody(BaseModel):
     ip: str=Field(default='',max_length=64)
 
 class Metadata(BaseModel):
-    domain: str=Field(pattern=r'^[a-z0-9-]+\.trycloudflare\.com$',max_length=253)
+    domain: str=Field(pattern=r'^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$',max_length=253)
+    type: str=Field(default='temp',pattern=r'^(temp|fixed|direct)$')
+    protocol: Literal['vless-ws-argo','reality','hysteria2']='vless-ws-argo'
+    public_key: str=Field(default='',pattern=r'^(?:[A-Za-z0-9_-]{43})?$')
+    short_id: str=Field(default='',pattern=r'^(?:[a-fA-F0-9]{16})?$')
     uuid: str=Field(max_length=36)
     path: str=Field(min_length=1,max_length=512)
-    local_port: int=Field(ge=1024,le=65535)
+    local_port: int=Field(ge=1,le=65535)
     @field_validator('uuid')
     @classmethod
     def uuid_valid(cls,v):return deploy.DeployBody.uuid_valid(v)
 
 class Report(BaseModel):
+    traffic: telemetry.Traffic | None=None
+    agent_version: int=Field(default=1,ge=1,le=100)
     state: str=Field(pattern=r'^(waiting|installing|online|degraded|network_error|repairing|error)$')
     metadata: Metadata | None=None
     process_alive: bool=False
@@ -128,6 +162,8 @@ def digest(token):return hashlib.sha256(token.encode()).hexdigest()
 def ensure_node(node_id):
     node=db.get_node(node_id)
     if not node:raise HTTPException(404,'节点不存在')
+    a=row(node_id)
+    if a:return a
     n=deploy.enrich(node)
     if n.get('protocol')!='vless-ws-argo':raise HTTPException(400,'仅支持接入 VLESS-WS + Argo 节点')
     a=row(node_id)
@@ -165,22 +201,34 @@ def enqueue(node_id,operation,config):
 def edit(node_id,body):
     if db.get_node(node_id) and db.get_node(node_id)['status']=='uninstalling':raise HTTPException(409,'节点正在等待卸载')
     a=ensure_node(node_id);n=db.get_node(node_id)
+    protocol=json.loads(a['desired_json']).get('protocol','vless-ws-argo')
+    if protocol=='vless-ws-argo':
+        if body.node_port<1024:raise HTTPException(400,'Argo 本地端口应为 1024–65535')
+        try:deploy.DeployBody.port_valid(body.client_port)
+        except ValueError as exc:raise HTTPException(400,str(exc))
+    elif not body.client_address:raise HTTPException(400,'请输入公网连接地址')
     running=db.get_conn().execute("SELECT 1 FROM agent_jobs WHERE node_id=? AND status IN ('queued','running')",(node_id,)).fetchone()
     desired=json.loads(a['desired_json'])
     if body.node_port!=desired['node_port']:
+        if cloudflare.binding(node_id):raise HTTPException(409,'固定隧道试运行期间请保持监听端口；优选地址与客户端端口可正常修改')
         desired['node_port']=body.node_port
         if not a['bound'] and not n['share_link'] and a['applied_revision']==0:
             c=db.get_conn();c.execute('UPDATE node_agents SET desired_json=?,actual_port=? WHERE node_id=?',(json.dumps(desired),body.node_port,node_id));c.execute("UPDATE agent_jobs SET config_json=? WHERE node_id=? AND status='queued'",(json.dumps(desired),node_id));c.commit()
             db.update_node(node_id,node_port=body.node_port)
         else:
             if running:raise HTTPException(409,'请先完成当前安装或配置任务，再修改监听端口')
+            if protocol in direct_nodes.KINDS:desired.update(client_address=body.client_address,client_port=body.client_port,remark=body.remark)
             enqueue(node_id,'update' if n['share_link'] else 'install',desired)
+            if protocol in direct_nodes.KINDS:
+                db.add_log(node_id,'直连端口变更已排队；保留当前链接，执行成功后同步新映射端口')
+                return enrich(deploy.enrich(db.get_node(node_id)))
     # Rebuild the client link immediately using the actual, currently applied metadata.
     link=n['share_link']
     if link:
         d=deploy.enrich(n)
         path=d['ws_path'] or parse_qs(urlparse(link).query).get('path',[''])[0]
-        link=deploy.make_link({'domain':n['sni'],'uuid':n['uuid'],'path':path},body)
+        if protocol in direct_nodes.KINDS:link=direct_nodes.make_link(direct_nodes.state(node_id),body)
+        else:link=deploy.make_link({'domain':n['sni'],'uuid':n['uuid'],'path':path},body)
     db.update_node(node_id,remark=body.remark,client_address=body.client_address,share_link=link)
     c=db.get_conn();c.execute('UPDATE deployments SET client_port=? WHERE node_id=?',(body.client_port,node_id))
     if link!=n['share_link']:c.execute("UPDATE node_agents SET probe_status='unknown',probe_at='',probe_error='',latency_ms=NULL WHERE node_id=?",(node_id,))
@@ -208,6 +256,18 @@ def accept_report(a,report):
         db.get_conn().execute('UPDATE node_agents SET last_report_at=? WHERE node_id=?',(db.utcnow(),node_id));db.get_conn().commit()
         return {'ok':True,'applied_revision':a['applied_revision']}
     metadata=report.metadata
+    b=cloudflare.binding(node_id)
+    protocol=json.loads(a['desired_json']).get('protocol','vless-ws-argo')
+    direct=protocol in direct_nodes.KINDS
+    if metadata and direct:
+        if metadata.protocol!=protocol or metadata.type!='direct':raise HTTPException(409,'节点协议与绑定记录不一致')
+        if protocol=='reality' and (not metadata.public_key or not metadata.short_id):raise HTTPException(409,'Reality 公钥不完整')
+    if metadata and not direct:
+        if metadata.local_port<1024:raise HTTPException(409,'Argo 上报端口无效')
+        if metadata.type=='fixed':
+            if not b or metadata.domain!=b['hostname']:raise HTTPException(409,'固定域名与当前节点绑定不一致')
+        elif not metadata.domain.endswith('.trycloudflare.com') or (b and b['status']=='active'):
+            raise HTTPException(409,'临时域名与当前节点隧道模式不一致')
     job=None
     if report.job_revision is not None and report.job_ok is not None:
         job=db.get_conn().execute('SELECT * FROM agent_jobs WHERE node_id=? AND revision=?',(node_id,report.job_revision)).fetchone()
@@ -221,8 +281,12 @@ def accept_report(a,report):
             raise HTTPException(409,'执行结果的监听端口与配置版本不一致')
     elif metadata and metadata.local_port!=a['actual_port']:
         raise HTTPException(409,'当前上报端口与已应用配置不一致')
+    if job and report.job_ok and json.loads(job['config_json']).get('tunnel_mode')=='fixed' and (not metadata or metadata.type!='fixed'):
+        raise HTTPException(409,'固定隧道任务尚未返回固定域名')
     c=db.get_conn();old_domain=node['sni'];changed=False
     try:
+        c.execute('UPDATE node_agents SET agent_version=max(agent_version,?) WHERE node_id=?',(report.agent_version,node_id))
+        if job and report.job_ok and metadata.type=='fixed':cloudflare.commit(node_id,metadata.local_port)
         c.execute('UPDATE node_agents SET last_report_at=?,health_status=?,process_alive=?,local_ws=?,public_ws=?,failure_count=?,last_repair=?,repair_count=? WHERE node_id=?',
                   (db.utcnow(),report.state,int(report.process_alive),int(report.local_ws),int(report.public_ws),report.failure_count,report.last_repair,report.repair_count,node_id))
         if job:
@@ -233,18 +297,26 @@ def accept_report(a,report):
             else:
                 c.execute('UPDATE node_agents SET last_job_error=? WHERE node_id=?',(report.error or '节点任务执行失败',node_id))
         if metadata:
-            body=deploy.NodeEditBody(remark=node['remark'],node_port=metadata.local_port,client_address=node['client_address'],client_port=db.get_conn().execute('SELECT client_port FROM deployments WHERE node_id=?',(node_id,)).fetchone()['client_port'])
-            link=deploy.make_link(metadata.model_dump(),body)
+            values=json.loads(job['config_json']) if direct and job and report.job_ok else {}
+            body=AgentEditBody(remark=values.get('remark',node['remark']),node_port=metadata.local_port,client_address=values.get('client_address',node['client_address']),client_port=values.get('client_port',db.get_conn().execute('SELECT client_port FROM deployments WHERE node_id=?',(node_id,)).fetchone()['client_port']))
+            if direct and job and report.job_ok:
+                c.execute('UPDATE nodes SET remark=?,client_address=? WHERE id=?',(body.remark,body.client_address,node_id))
+                c.execute('UPDATE deployments SET client_port=? WHERE node_id=?',(body.client_port,node_id))
+            if direct:
+                link=direct_nodes.make_link(metadata.model_dump(),body)
+                c.execute('INSERT OR REPLACE INTO direct_node_state VALUES (?,?)',(node_id,json.dumps(metadata.model_dump())))
+            else:link=deploy.make_link(metadata.model_dump(),body)
             changed=link!=node['share_link']
             c.execute('UPDATE nodes SET share_link=?,uuid=?,sni=?,node_port=? WHERE id=?',(link,metadata.uuid,metadata.domain,metadata.local_port,node_id))
             c.execute('UPDATE deployments SET ws_path=? WHERE node_id=?',(metadata.path,node_id))
             if changed:c.execute("UPDATE node_agents SET probe_status='unknown',probe_at='',probe_error='',latency_ms=NULL WHERE node_id=?",(node_id,))
+        telemetry.record(node_id,report.traffic)
         c.commit()
     except Exception:c.rollback();raise
     latest=row(node_id)
     pending=c.execute("SELECT 1 FROM agent_jobs WHERE node_id=? AND status IN ('queued','running')",(node_id,)).fetchone()
     error=latest['last_job_error']
-    status='installing' if pending else ('error' if error else ('online' if report.local_ws and report.public_ws else 'degraded'))
+    status='installing' if pending else ('error' if error else ('online' if report.local_ws and (direct or report.public_ws) else 'degraded'))
     if not metadata and not node['share_link'] and not pending:status='error'
     db.update_node(node_id,status=status,last_seen=db.utcnow(),last_error=error or report.error)
     if changed:db.add_log(node_id,'已同步节点最新域名和 VLESS 链接'+('（临时隧道域名已变化）' if old_domain and old_domain!=metadata.domain else ''))
@@ -260,7 +332,18 @@ def accept_report(a,report):
 def job_script(a,job):
     config=json.loads(job['config_json']);n=deploy.enrich(db.get_node(a['node_id']))
     if job['operation']=='uninstall':
+        if config.get('protocol') in direct_nodes.KINDS:return direct_nodes.uninstall(a['node_id'],config,job['revision'])
         return (ROOT/'node-uninstall.sh').read_text().replace('__NODE_ID__',str(a['node_id'])).replace('__UUID__',shlex.quote(config['uuid'])).replace('__REVISION__',str(job['revision']))
+    if job['operation']=='upgrade':
+        from . import fixed_jobs
+        return fixed_jobs.upgrade(a['node_id'],config['node_port'],config.get('protocol','vless-ws-argo'))
+    if config.get('protocol') in direct_nodes.KINDS:return direct_nodes.driver(a['node_id'],config,job['operation'])
+    from . import fixed_jobs
+    if job['operation']=='fixed' or config.get('tunnel_mode')=='fixed':
+        if a.get('agent_version',1)<2:raise HTTPException(409,'请等待监控脚本升级完成')
+        cloudflare.provision(a['node_id'],config.get('fixed_hostname',''),config['node_port'])
+        if not n.get('share_link'):return fixed_jobs.install(a['node_id'],config,n['remark'])
+        return fixed_jobs.migrate(a['node_id'],config)
     body=deploy.DeployBody(host='agent.local',host_key='agent-generated-placeholder-key',operation=job['operation'],
                           old_port=a['actual_port'],expected_uuid=config['uuid'],node_port=config['node_port'],ws_path=config['ws_path'],uuid=config['uuid'],
                           remark=n['remark'],client_address=n['client_address'],client_port=n['client_port'])
@@ -277,6 +360,7 @@ def request_delete(node):
     a=row(node['id'])
     if not a or not a['bound']:
         if node['share_link']:raise HTTPException(409,'请先接入监控，执行接入命令后才能从面板卸载远端节点')
+        cloudflare.cleanup(node['id'])
         db.delete_node(node['id']);return {'ok':True,'deleted':True}
     if node['status']=='uninstalling':return {'ok':True,'pending':True}
     c=db.get_conn()
@@ -286,6 +370,12 @@ def request_delete(node):
     db.update_node(node['id'],status='uninstalling')
     db.add_log(node['id'],'已排队远端卸载，收到清理成功确认后自动删除记录')
     return {'ok':True,'pending':True}
+
+
+def force_delete(node):
+    """Remove only panel state; never dispatch remote or cloud cleanup."""
+    db.delete_node(node['id'])
+    return {'ok':True,'deleted':True,'forced':True,'remote_cleanup_confirmed':False}
 
 
 def deletion_blocked(node):
@@ -326,12 +416,15 @@ def start_loop():
                     if age(a['last_report_at'])<180 and (age(a['probe_at'])>=300 or a['probe_status']=='pending'):
                         schedule_probe(a['node_id'])
             except Exception:pass
+            try:telemetry.tick()
+            except Exception:pass
     LOOP=threading.Thread(target=loop,daemon=True);LOOP.start()
 
 
 def register(app,require_login,public_url):
     global PUBLIC_URL
     PUBLIC_URL=public_url
+    telemetry.register(app,require_login)
     def owner(request):
         require_login(request)
         if request.headers.get('origin') and urlparse(request.headers['origin']).netloc!=request.headers.get('host'):
@@ -340,20 +433,59 @@ def register(app,require_login,public_url):
     def create(body:CreateBody,request:Request):
         owner(request)
         with LOCK:
+            if body.protocol=='vless-ws-argo':
+                if body.node_port<1024:raise HTTPException(400,'Argo 本地端口应为 1024–65535')
+                try:deploy.DeployBody.port_valid(body.client_port)
+                except ValueError as exc:raise HTTPException(400,str(exc))
+            elif not body.client_address:raise HTTPException(400,'直连节点需要公网连接地址或 NAT 出口地址')
+            fixed_host=''
+            if body.protocol=='vless-ws-argo' and body.tunnel_mode=='fixed':
+                try:
+                    cfg=cloudflare.settings()
+                    if body.fixed_hostname:fixed_host=cloudflare.valid_hostname(body.fixed_hostname)
+                except cloudflare.CFError as exc:raise HTTPException(400,str(exc))
             n=db.create_node(body.remark,body.node_port,'',body.client_address,secrets.token_urlsafe(24));config={'node_port':body.node_port,'ws_path':body.ws_path or '/'+secrets.token_hex(12),'uuid':body.uuid or str(uuid4())}
+            if body.protocol in direct_nodes.KINDS:config.update(protocol=body.protocol,server_name=body.server_name,ws_path='/')
+            if body.protocol=='vless-ws-argo' and body.tunnel_mode=='fixed':config.update(tunnel_mode='fixed',fixed_hostname=fixed_host or f"node-{n['id']}.{cfg['zone_name']}")
             c=db.get_conn();c.execute('INSERT INTO deployments VALUES (?,?,?,?,?,?)',(n['id'],'',22,body.client_port,config['ws_path'],''));c.commit()
             db.update_node(n['id'],uuid=config['uuid'])
             ensure_node(n['id']);c.execute('UPDATE node_agents SET desired_json=? WHERE node_id=?',(json.dumps(config),n['id']));c.execute('UPDATE agent_jobs SET config_json=? WHERE node_id=? AND revision=1',(json.dumps(config),n['id']));c.commit()
             db.add_log(n['id'],'安装命令已生成，请在目标服务器以 root 执行')
             return enrollment(n['id'])
+    @app.post('/api/agent-nodes/{node_id}/fixed')
+    def migrate_fixed(node_id:int,body:FixedBody,request:Request):
+        owner(request)
+        with LOCK:
+            a=ensure_node(node_id);n=db.get_node(node_id)
+            if json.loads(a['desired_json']).get('protocol','vless-ws-argo')!='vless-ws-argo':raise HTTPException(400,'仅 Argo 节点支持固定隧道')
+            if not a['bound'] or not n['share_link']:raise HTTPException(409,'请先完成节点部署并接入监控')
+            if n['status']=='uninstalling' or age(a['last_report_at'])>180:raise HTTPException(409,'节点正在卸载或未在线上报')
+            if db.get_conn().execute("SELECT 1 FROM agent_jobs WHERE node_id=? AND status IN ('queued','running')",(node_id,)).fetchone():raise HTTPException(409,'请先完成当前任务')
+            config=json.loads(a['desired_json']);config['node_port']=a['actual_port']
+            try:
+                b=cloudflare.provision(node_id,body.hostname,config['node_port'])
+            except cloudflare.CFError as exc:raise HTTPException(502,str(exc))
+            if a.get('agent_version',1)<2:enqueue(node_id,'upgrade',config)
+            config.update(tunnel_mode='fixed',fixed_hostname=b['hostname'])
+            revision=enqueue(node_id,'fixed',config)
+            return {'ok':True,'revision':revision,'hostname':b['hostname']}
     @app.post('/api/agent-nodes/{node_id}/enrollment')
     def make_enrollment(node_id:int,request:Request):
         owner(request)
         with LOCK:return enrollment(node_id)
     @app.patch('/api/agent-nodes/{node_id}')
-    def edit_node(node_id:int,body:deploy.NodeEditBody,request:Request):
+    def edit_node(node_id:int,body:AgentEditBody,request:Request):
         owner(request)
         with LOCK:return edit(node_id,body)
+    @app.post('/api/agent-nodes/{node_id}/upgrade')
+    def upgrade_agent(node_id:int,request:Request):
+        owner(request)
+        with LOCK:
+            a=ensure_node(node_id)
+            if not a['bound'] or db.get_node(node_id)['status']=='uninstalling':raise HTTPException(409,'节点未绑定或正在卸载')
+            if db.get_conn().execute("SELECT 1 FROM agent_jobs WHERE node_id=? AND status IN ('queued','running')",(node_id,)).fetchone():raise HTTPException(409,'已有任务等待执行')
+            config=json.loads(a['desired_json']);config['node_port']=a['actual_port']
+            return {'ok':True,'revision':enqueue(node_id,'upgrade',config)}
     @app.post('/api/agent-nodes/{node_id}/refresh')
     def refresh(node_id:int,request:Request):
         owner(request)
@@ -388,8 +520,8 @@ def register(app,require_login,public_url):
         return PlainTextResponse(bootstrap_script(public_url(),token,a['node_id']),media_type='text/x-shellscript')
     @app.get('/agent/assets/{name}')
     def asset(name:str):
-        files={'agent.sh':'node-agent.sh','repair.sh':'node-repair.sh'}
-        if name=='library.sh':text=deploy.SCRIPT.read_text().rsplit('\nmain',1)[0]+'\n'
+        files={'agent.sh':'node-agent.sh','repair.sh':'node-repair.sh','fixed.sh':'node-fixed.sh','traffic.sh':'node-traffic.sh'}
+        if name=='library.sh':text=deploy.installer_text().rsplit('\nmain',1)[0]+'\n'
         elif name in files:text=(ROOT/files[name]).read_text()
         else:raise HTTPException(404,'资源不存在')
         return PlainTextResponse(text,media_type='text/x-shellscript')
@@ -404,7 +536,7 @@ def register(app,require_login,public_url):
             except ValueError:
                 if not n['host_ip']:fields['host_ip']=body.hostname
             db.update_node(n['id'],**fields);db.add_log(n['id'],'节点已通过一次性安装凭据绑定，开始主动上报')
-            return {'node_id':n['id'],'agent_token':token,'port':a['actual_port'],'applied_revision':a['applied_revision']}
+            return {'node_id':n['id'],'agent_token':token,'port':a['actual_port'],'applied_revision':a['applied_revision'],'protocol':json.loads(a['desired_json']).get('protocol','vless-ws-argo')}
     @app.post('/agent/uninstalled/{revision}')
     def uninstalled(revision:int,x_agent_token:str|None=Header(default=None)):
         with LOCK:
@@ -414,9 +546,16 @@ def register(app,require_login,public_url):
             a=authorize(x_agent_token)
             job=db.get_conn().execute("SELECT 1 FROM agent_jobs WHERE node_id=? AND revision=? AND operation='uninstall' AND status='running'",(a['node_id'],revision)).fetchone()
             if not job:raise HTTPException(409,'无有效卸载任务')
+            try:cloudflare.cleanup(a['node_id'])
+            except cloudflare.CFError as exc:raise HTTPException(502,str(exc))
             c.execute('INSERT OR REPLACE INTO uninstall_receipts VALUES (?,?,?)',(a['token_hash'],revision,int(time.time())+86400))
             db.delete_node(a['node_id'])
             return {'ok':True}
+    @app.get('/agent/fixed-config')
+    def fixed_config(x_agent_token:str|None=Header(default=None)):
+        a=authorize(x_agent_token)
+        try:return cloudflare.credentials(a['node_id'])
+        except cloudflare.CFError as exc:raise HTTPException(502,str(exc))
     @app.get('/agent/work')
     def work(x_agent_token:str|None=Header(default=None)):
         a=authorize(x_agent_token)
@@ -427,7 +566,14 @@ def register(app,require_login,public_url):
         a=authorize(x_agent_token);job=db.get_conn().execute("SELECT * FROM agent_jobs WHERE node_id=? AND revision=? AND status IN ('queued','running')",(a['node_id'],revision)).fetchone()
         if not job:raise HTTPException(409,'任务已完成或已取消')
         c=db.get_conn();c.execute("UPDATE agent_jobs SET status='running' WHERE node_id=? AND revision=?",(a['node_id'],revision));c.commit()
-        db.update_node(a['node_id'],status='uninstalling' if job['operation']=='uninstall' else 'installing');return PlainTextResponse(job_script(a,job),media_type='text/x-shellscript')
+        db.update_node(a['node_id'],status='uninstalling' if job['operation']=='uninstall' else 'installing')
+        try:script=job_script(a,job)
+        except cloudflare.CFError as exc:
+            c.execute("UPDATE agent_jobs SET status='failed',finished_at=? WHERE node_id=? AND revision=?",(db.utcnow(),a['node_id'],revision))
+            c.execute('UPDATE node_agents SET last_job_error=? WHERE node_id=?',(str(exc),a['node_id']));c.commit()
+            db.update_node(a['node_id'],status='error',last_error=str(exc));db.add_log(a['node_id'],'固定隧道准备失败：'+str(exc))
+            raise HTTPException(502,str(exc))
+        return PlainTextResponse(script,media_type='text/x-shellscript')
     @app.post('/agent/report')
     def report(body:Report,x_agent_token:str|None=Header(default=None)):
         with LOCK:return accept_report(authorize(x_agent_token),body)

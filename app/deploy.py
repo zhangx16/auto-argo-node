@@ -182,6 +182,14 @@ def enrich(node):
     return agent.enrich(node)
 
 
+def installer_text():
+    text = (Path(__file__).parent / "node-library.sh").read_text()
+    marker = "jq -c 'to_entries[]' \"$ARGO_METADATA_FILE\""
+    if text.count(marker) != 1:
+        raise RuntimeError('上游守护脚本结构已变化，拒绝部署')
+    return text.replace(marker, "jq -c 'to_entries[] | select(.value.manager != \"argo-deploy-fixed\")' \"$ARGO_METADATA_FILE\"")
+
+
 def driver(body):
     """Pass only validated configuration and a vendored installer, never SSH secrets."""
     if body.operation == 'read':
@@ -191,7 +199,7 @@ def driver(body):
         'NAME': body.remark, 'CUSTOM_UUID': body.uuid, 'OPERATION':body.operation,
         'OLD_PORT':body.old_port or body.node_port, 'EXPECTED_UUID':body.expected_uuid,
     }.items())
-    encoded = base64.b64encode(SCRIPT.read_bytes()).decode()
+    encoded = base64.b64encode(installer_text().encode()).decode()
     port_helper = (Path(__file__).parent / 'port-update.sh').read_text()
     return '''#!/bin/sh
 set -eu
@@ -286,8 +294,8 @@ bash "$WORK/run.sh" "$WORK"
 
 def make_link(meta, body):
     domain = meta['domain']
-    if not re.fullmatch(r'[a-z0-9-]+\.trycloudflare\.com', domain):
-        raise ValueError('返回的临时隧道域名无效')
+    if not re.fullmatch(r'(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}', domain):
+        raise ValueError('返回的隧道域名无效')
     from uuid import UUID
     uuid = str(UUID(meta['uuid']))
     host = body.client_address or domain

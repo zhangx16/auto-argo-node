@@ -38,6 +38,14 @@ class AgentApiTests(unittest.TestCase):
         result={'state':'online','metadata':meta,'process_alive':True,'local_ws':True,'public_ws':True,'job_revision':rev,'job_ok':True}
         code,ack=self.agent_call('/agent/report',token,result);self.assertEqual(code,200,ack)
         return id,token,meta
+    def test_fixed_create_requires_configured_account(self):
+        before=self.call('/api/nodes')[1]
+        code,data=self.call('/api/agent-nodes','POST',{'remark':'Fixed QA','node_port':18080,'tunnel_mode':'fixed','fixed_hostname':'kr.example.com'})
+        self.assertEqual(code,400,data)
+        self.assertEqual(len(self.call('/api/nodes')[1]),len(before))
+        code,_=self.call('/api/agent-nodes','POST',{'remark':'Invalid mode','node_port':18080,'tunnel_mode':'other'})
+        self.assertEqual(code,422)
+
     def test_one_time_enrollment_and_rebinding_revokes_old_token(self):
         id,enroll,cmd=self.create_agent();token=self.enroll_agent(enroll)
         code,_=self.call('/agent/enroll','POST',{'enrollment_token':enroll},authed=False);self.assertEqual(code,410)

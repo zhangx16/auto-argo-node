@@ -9,11 +9,14 @@ case "$DIR" in /usr/local/etc/argo-deploy/node-[0-9]*) ;; *) exit 1;; esac
 exec 8>"$DIR/tick.lock"
 flock -n 8 || exit 0
 BASE=/usr/local/lib/argo-deploy
-PANEL=$(jq -r '.panel' "$DIR/settings.json")
-NODE_ID=$(jq -r '.node_id' "$DIR/settings.json")
+WORK_CONFIG=$(mktemp /tmp/argo-config.XXXXXXXX) || exit 1
+jq -r '[.panel,(.protocol // "vless-ws-argo"),.node_id,.port] | @tsv' "$DIR/settings.json" > "$WORK_CONFIG" || { rm -f "$WORK_CONFIG";exit 1; }
+IFS="$(printf '\t')" read -r PANEL PROTOCOL NODE_ID PORT < "$WORK_CONFIG"
+rm -f "$WORK_CONFIG"
 WORK=$(mktemp -d /tmp/argo-tick.XXXXXXXX) || exit 1
 trap 'rm -rf "$WORK"' EXIT HUP INT TERM
 HTTP_CODE=""
+if [ -f "$BASE/traffic.sh" ];then . "$BASE/traffic.sh";traffic_sample;else printf null > "$WORK/traffic.json";fi
 api() {
  method=$1;endpoint=$2;output=$3;input=${4:-}
  if [ -n "$input" ]; then
@@ -30,8 +33,12 @@ api() {
 }
 load_meta() {
  PORT=$(jq -r '.port' "$DIR/settings.json")
+ if [ "$PROTOCOL" != vless-ws-argo ];then
+  if [ -s "$DIR/direct.json" ];then cp "$DIR/direct.json" "$WORK/meta.json";else printf null > "$WORK/meta.json";fi
+  return
+ fi
  TAG="argo-vless-ws-${PORT}"
- jq -c --arg t "$TAG" '.[$t] | select(.protocol=="vless-ws" and .type=="temp") | {domain,uuid,path,local_port}' /usr/local/etc/sing-box/argo_metadata.json > "$WORK/meta.json" 2>/dev/null || true
+ jq -c --arg t "$TAG" '.[$t] | select(.protocol=="vless-ws" and (.type=="temp" or .type=="fixed")) | {domain,uuid,path,local_port,type}' /usr/local/etc/sing-box/argo_metadata.json > "$WORK/meta.json" 2>/dev/null || true
  if [ ! -s "$WORK/meta.json" ]; then printf null > "$WORK/meta.json"; fi
 }
 update_setting() {
@@ -63,6 +70,12 @@ ws_check() {
 }
 check_health() {
  PROCESS=false;LOCAL=false;PUBLIC=false
+ if [ "$PROTOCOL" != vless-ws-argo ];then
+  if pgrep -x sing-box >/dev/null 2>&1;then PROCESS=true;fi
+  if [ "$PROTOCOL" = hysteria2 ];then flags=-lnu;else flags=-lnt;fi
+  if { ss "$flags" 2>/dev/null || netstat "$flags" 2>/dev/null; } | grep -qE ":${PORT}[[:space:]]";then LOCAL=true;fi
+  return
+ fi
  pid=$(cat "/run/singboxlite/argo-${PORT}.pid" 2>/dev/null || true)
  case "$pid" in ''|*[!0-9]*) ;; *)
   if kill -0 "$pid" 2>/dev/null && tr '\000' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q cloudflared; then PROCESS=true; fi;; esac
@@ -75,8 +88,8 @@ check_health() {
 send_state() {
  state=$1;error=$2;out=$3
  jq -n --arg state "$state" --arg error "$error" --argjson process "$PROCESS" --argjson local "$LOCAL" --argjson public "$PUBLIC" \
- --argjson failures "$FAILURES" --argjson last "$LAST_REPAIR" --argjson repairs "$REPAIRS" --slurpfile meta "$WORK/meta.json" \
- '{state:$state,error:$error,metadata:$meta[0],process_alive:$process,local_ws:$local,public_ws:$public,failure_count:$failures,last_repair:$last,repair_count:$repairs}' > "$out"
+ --argjson failures "$FAILURES" --argjson last "$LAST_REPAIR" --argjson repairs "$REPAIRS" --slurpfile traffic "$WORK/traffic.json" --slurpfile meta "$WORK/meta.json" \
+ '{agent_version:4,traffic:$traffic[0],state:$state,error:$error,metadata:$meta[0],process_alive:$process,local_ws:$local,public_ws:$public,failure_count:$failures,last_repair:$last,repair_count:$repairs}' > "$out"
 }
 run_repair() {
  mode=$1;limit=$2
@@ -95,23 +108,23 @@ run_repair() {
 }
 if jq -e 'type=="object"' "$WORK/meta.json" >/dev/null; then
  check_health
- if [ "$LOCAL" = true ] && [ "$PUBLIC" = true ] && [ "$PROCESS" = true ]; then FAILURES=0;STATE=online
+ if [ "$LOCAL" = true ] && { [ "$PUBLIC" = true ] || [ "$PROTOCOL" != vless-ws-argo ]; } && [ "$PROCESS" = true ]; then FAILURES=0;STATE=online
  else
   FAILURES=$((FAILURES+1));STATE=degraded;ERROR='本地服务或公网 WebSocket 隧道检查未通过'
   NOW=$(date +%s)
   if [ "$FAILURES" -ge 3 ] && [ $((NOW-LAST_REPAIR)) -ge 300 ]; then
    # A general egress outage must not create a tunnel restart loop.
-   if curl --connect-timeout 3 --max-time 5 -fsS https://www.cloudflare.com/cdn-cgi/trace >/dev/null 2>&1; then
+   if [ "$PROTOCOL" != vless-ws-argo ] || curl --connect-timeout 3 --max-time 5 -fsS https://www.cloudflare.com/cdn-cgi/trace >/dev/null 2>&1; then
     LAST_REPAIR=$NOW;REPAIRS=$((REPAIRS+1));printf '%s\n' "$LAST_REPAIR" > "$DIR/last-repair";printf '%s\n' "$REPAIRS" > "$DIR/repairs"
     if [ "$LOCAL" != true ]; then
      run_repair service 60 || true
      check_health
     fi
-    if [ "$PUBLIC" != true ] || [ "$PROCESS" != true ]; then
+    if [ "$PROTOCOL" = vless-ws-argo ] && { [ "$PUBLIC" != true ] || [ "$PROCESS" != true ]; }; then
      run_repair tunnel 210 || true
      load_meta;check_health
     fi
-    if [ "$LOCAL" = true ] && [ "$PUBLIC" = true ] && [ "$PROCESS" = true ]; then FAILURES=0;STATE=online;ERROR='';else STATE=degraded;ERROR='自动修复后隧道仍未通过检查，已进入 5 分钟冷却';fi
+    if [ "$LOCAL" = true ] && { [ "$PUBLIC" = true ] || [ "$PROTOCOL" != vless-ws-argo ]; } && [ "$PROCESS" = true ]; then FAILURES=0;STATE=online;ERROR='';else STATE=degraded;ERROR='自动修复后隧道仍未通过检查，已进入 5 分钟冷却';fi
    else STATE=network_error;ERROR='服务器出站网络检查失败，暂不重建隧道';fi
   fi
  fi
@@ -149,7 +162,7 @@ sed -n 's/^SB_WEB_RESULT=//p' "$WORK/job.log" | tail -1 > "$WORK/result.json"
 if [ "$CODE" = 0 ] && jq -e '.domain and .uuid and .path and .local_port' "$WORK/result.json" >/dev/null 2>&1; then
  update_setting port "$NEW_PORT"
  load_meta;check_health
- if [ "$LOCAL" = true ] && [ "$PUBLIC" = true ]; then STATE=online;ERROR='';else STATE=degraded;ERROR='配置已应用，连通性检查尚未通过';fi
+ if [ "$LOCAL" = true ] && { [ "$PUBLIC" = true ] || [ "$PROTOCOL" != vless-ws-argo ]; }; then STATE=online;ERROR='';else STATE=degraded;ERROR='配置已应用，连通性检查尚未通过';fi
  send_state "$STATE" "$ERROR" "$WORK/base-report.json"
  jq --argjson rev "$REV" '. + {job_revision:$rev,job_ok:true}' "$WORK/base-report.json" > "$DIR/pending-report.json"
 else

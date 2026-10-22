@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-from . import auth, db, deploy, agent, subscriptions
+from . import auth, db, deploy, agent, subscriptions, cloudflare
 from .scripts import INSTALL_SH, UNINSTALL_SH, render_script
 
 APP_DIR = Path(__file__).resolve().parent
@@ -76,7 +76,7 @@ def ensure_admin() -> None:
     db.set_setting("admin_hash", auth.hash_password(password, salt))
     CREDENTIALS_FILE.write_text(
         f"username={user}\npassword={password}\npanel={public_url()}\n"
-        "note=登录后必须绑定 2FA；此明文密码仅首次生成。\n",
+        "note=使用用户名和密码登录；此明文密码仅首次生成。\n",
         encoding="utf-8",
     )
     CREDENTIALS_FILE.chmod(0o600)
@@ -85,7 +85,7 @@ def ensure_admin() -> None:
     print(f"  面板: {public_url()}", flush=True)
     print(f"  用户: {user}", flush=True)
     print(f"  密码: {password}", flush=True)
-    print("  首次登录后必须绑定 TOTP", flush=True)
+    print("  使用用户名和密码登录", flush=True)
     print("=" * 48, flush=True)
 
 
@@ -94,6 +94,7 @@ def on_startup() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     db.init_db()
     agent.init()
+    cloudflare.init()
     subscriptions.init()
     deploy.init()
     agent.start_loop()
@@ -176,7 +177,7 @@ def enrich(node: dict) -> dict:
 
 
 def generic_login_error() -> HTTPException:
-    return HTTPException(status_code=400, detail="用户名、密码或验证码错误")
+    return HTTPException(status_code=400, detail="用户名或密码错误")
 
 
 @app.get("/health")
@@ -205,18 +206,8 @@ def login(body: LoginBody, request: Request):
         auth.record_attempt(ip, username, False)
         raise generic_login_error()
     auth.record_attempt(ip, username, True)
-    if not auth.totp_enabled():
-        secret = auth.new_totp_secret()
-        challenge = auth.create_challenge("setup", ip, extra=secret)
-        otpauth = auth.otpauth_url(user, secret)
-        return {
-            "step": "setup_2fa",
-            "challenge": challenge,
-            "qr": auth.qr_data_url(otpauth),
-            "secret": secret,
-        }
-    challenge = auth.create_challenge("login", ip)
-    return {"step": "totp", "challenge": challenge}
+    auth.establish_session(request, user)
+    return {"ok": True, "user": user}
 
 
 def hmac_ok(left: str, right: str) -> bool:
@@ -225,48 +216,6 @@ def hmac_ok(left: str, right: str) -> bool:
     if not left or not right:
         return False
     return hmac_mod.compare_digest(left, right)
-
-
-@app.post("/api/login/totp")
-def login_totp(body: TotpBody, request: Request):
-    ip = auth.client_ip(request)
-    if auth.is_locked(ip, db.get_setting("admin_user")):
-        raise HTTPException(status_code=429, detail="尝试过多，请 15 分钟后再试")
-    row = auth.take_challenge(body.challenge, "login", ip)
-    if not row:
-        auth.record_attempt(ip, db.get_setting("admin_user"), False)
-        raise generic_login_error()
-    secret = db.get_setting("totp_secret")
-    ok = auth.verify_totp(secret, body.code) or auth.verify_backup_code(body.code)
-    if not ok:
-        auth.record_attempt(ip, db.get_setting("admin_user"), False)
-        raise generic_login_error()
-    auth.establish_session(request, db.get_setting("admin_user"))
-    return {"ok": True, "user": db.get_setting("admin_user")}
-
-
-@app.post("/api/login/setup-2fa")
-def setup_2fa(body: TotpBody, request: Request):
-    ip = auth.client_ip(request)
-    row = auth.get_challenge(body.challenge, "setup")
-    if not row:
-        raise HTTPException(status_code=400, detail="绑定会话已过期，请重新登录")
-    secret = row.get("extra") or ""
-    if not auth.verify_totp(secret, body.code):
-        raise HTTPException(status_code=400, detail="验证码不正确")
-    auth.consume_challenge(body.challenge)
-    db.set_setting("totp_secret", secret)
-    codes = auth.generate_backup_codes()
-    auth.establish_session(request, db.get_setting("admin_user"))
-    if CREDENTIALS_FILE.exists():
-        CREDENTIALS_FILE.write_text(
-            f"username={db.get_setting('admin_user')}\n"
-            f"panel={public_url()}\n"
-            "note=明文密码已不再保存；两步验证已启用。\n",
-            encoding="utf-8",
-        )
-        CREDENTIALS_FILE.chmod(0o600)
-    return {"ok": True, "backup_codes": codes}
 
 
 @app.post("/api/logout")
@@ -320,23 +269,13 @@ def put_settings(body: SettingsBody, request: Request):
         stored = db.get_setting("admin_hash")
         if not body.current_password or not hmac_ok(auth.hash_password(body.current_password, salt), stored):
             raise HTTPException(status_code=400, detail="当前密码不正确")
-        secret = db.get_setting("totp_secret")
-        if not secret or not body.totp_code or not auth.verify_totp(secret, body.totp_code):
-            raise HTTPException(status_code=400, detail="两步验证码不正确")
         new_salt = secrets.token_hex(16)
         db.set_setting("admin_salt", new_salt)
         db.set_setting("admin_hash", auth.hash_password(body.admin_password, new_salt))
     return get_settings(request)
 
 
-@app.post("/api/2fa/backup-codes")
-def regen_backup(body: TotpCodeBody, request: Request):
-    require_login(request)
-    secret = db.get_setting("totp_secret")
-    if not secret or not auth.verify_totp(secret, body.code):
-        raise HTTPException(status_code=400, detail="两步验证码不正确")
-    codes = auth.generate_backup_codes()
-    return {"backup_codes": codes}
+
 
 
 @app.get("/api/nodes")
@@ -385,6 +324,15 @@ def api_delete_node(node_id: int, request: Request, mode: str = "panel"):
     node = db.get_node(node_id)
     if not node:
         raise HTTPException(status_code=404, detail="节点不存在")
+    if request.headers.get('origin') and urlparse(request.headers['origin']).netloc != request.headers.get('host'):
+        raise HTTPException(status_code=403, detail="请求来源不匹配")
+    if mode not in ('panel','force'):
+        raise HTTPException(status_code=400, detail="不支持的删除方式")
+    if mode == 'force':
+        with agent.LOCK:
+            current = db.get_node(node_id)
+            if not current:raise HTTPException(status_code=404, detail="节点不存在")
+            return agent.force_delete(current)
     if agent.deletion_blocked(node):
         raise HTTPException(status_code=409, detail="部署中无法删除，请等待任务结束")
     return agent.request_delete(node)
@@ -547,6 +495,7 @@ async def http_exc_handler(request: Request, exc: HTTPException):
 deploy.register(app, require_login)
 agent.register(app, require_login, public_url)
 subscriptions.register(app, require_login, public_url, ensure_secret())
+cloudflare.register(app, require_login)
 
 @app.on_event("shutdown")
 def stop_agent_probes():

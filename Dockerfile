@@ -9,7 +9,9 @@ RUN apt-get update \
 COPY requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 
-COPY scripts/fetch-installer.sh /app/scripts/fetch-installer.sh
+COPY scripts/fetch-probe-core.sh scripts/fetch-installer.sh /app/scripts/
+RUN sh /app/scripts/fetch-probe-core.sh
+
 COPY app /app/app
 RUN sh /app/scripts/fetch-installer.sh
 

@@ -23,6 +23,10 @@ case "$ID" in
  debian|ubuntu) apt-get update; DEBIAN_FRONTEND=noninteractive apt-get install -y bash curl jq ca-certificates util-linux cron ;;
  *) echo '当前仅支持 Alpine / Debian / Ubuntu'; exit 1 ;;
 esac
+# Optional kernel traffic dependency. Unsupported NAT kernels remain usable.
+if ! command -v nft >/dev/null 2>&1;then
+ case "$ID" in alpine) apk add --no-cache nftables || true;; *) apt-get install -y --no-install-recommends nftables || true;; esac
+fi
 BASE=/usr/local/lib/argo-deploy
 DIR="/usr/local/etc/argo-deploy/node-${NODE_ID}"
 mkdir -p "$BASE" "$DIR"
@@ -30,7 +34,7 @@ chmod 700 "$DIR"
 if [ "$LOCKED" = 0 ]; then exec 8>"$DIR/tick.lock"; flock 8; fi
 TMP=$(mktemp -d /tmp/argo-enroll.XXXXXXXX)
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
-for name in agent.sh repair.sh library.sh; do
+for name in agent.sh repair.sh library.sh fixed.sh traffic.sh; do
  curl --http1.1 --connect-timeout 10 --max-time 90 -fsSL "$PANEL/agent/assets/$name" -o "$TMP/$name"
  chmod 700 "$TMP/$name"
 done
@@ -40,13 +44,13 @@ jq -n --arg token "$ENROLLMENT" --arg hostname "$(hostname)" --arg os "$ID" --ar
  '{enrollment_token:$token,hostname:$hostname,os:$os,arch:$arch,ip:$ip}' > "$TMP/enroll.json"
 curl --http1.1 --connect-timeout 10 --max-time 25 -fsS -H 'Content-Type: application/json' --data-binary @"$TMP/enroll.json" "$PANEL/agent/enroll" -o "$TMP/reply.json"
 jq -e --argjson id "$NODE_ID" '.node_id == $id and (.agent_token | type == "string")' "$TMP/reply.json" >/dev/null
-jq --arg panel "$PANEL" '{panel:$panel,node_id:.node_id,port:.port,applied_revision:.applied_revision}' "$TMP/reply.json" > "$DIR/settings.json.new"
+jq --arg panel "$PANEL" '{panel:$panel,node_id:.node_id,port:.port,applied_revision:.applied_revision,protocol:(.protocol // "vless-ws-argo")}' "$TMP/reply.json" > "$DIR/settings.json.new"
 jq -r '.agent_token | "header = \\"X-Agent-Token: " + . + "\\""' "$TMP/reply.json" > "$DIR/curl.conf.new"
 printf '%s\\n' 'header = "Content-Type: application/json"' 'silent' 'show-error' 'connect-timeout = 8' 'max-time = 30' >> "$DIR/curl.conf.new"
 chmod 600 "$DIR/settings.json.new" "$DIR/curl.conf.new"
 mv "$DIR/settings.json.new" "$DIR/settings.json"
 mv "$DIR/curl.conf.new" "$DIR/curl.conf"
-for name in agent.sh repair.sh library.sh; do mv "$TMP/$name" "$BASE/$name"; done
+for name in agent.sh repair.sh library.sh fixed.sh traffic.sh; do mv "$TMP/$name" "$BASE/$name"; done
 rm -f "$DIR/disabled"
 # Reuse the system's cron daemon; no Python or persistent monitoring process.
 if ! command -v crontab >/dev/null 2>&1; then

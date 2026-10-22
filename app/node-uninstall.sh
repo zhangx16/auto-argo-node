@@ -42,6 +42,8 @@ remove_owned() {
 }
 if _with_state_lock remove_owned; then :; else exit 1; fi
 BASH
+# Remove only this node's dedicated optional traffic counters.
+if command -v nft >/dev/null;then nft delete table inet argo_traffic___NODE_ID__ 2>/dev/null || true;fi
 # Keep credentials and the cron retry until the panel acknowledges successful cleanup.
 curl --config "$DIR/curl.conf" --retry 3 --retry-all-errors -fsS -X POST "$PANEL/agent/uninstalled/__REVISION__" >/dev/null
 (crontab -l 2>/dev/null || true) | grep -vE '# argo-deploy-node-__NODE_ID__$' > "$DIR/cron.new" || true

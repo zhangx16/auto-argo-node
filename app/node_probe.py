@@ -9,6 +9,43 @@ from websockets.sync.client import connect
 
 
 def probe_link(link, timeout=15):
+    u=urlparse(link);q=parse_qs(u.query)
+    if u.scheme in ('hysteria2','hy2') or q.get('security')==['reality']:
+        return native_probe(link,timeout)
+    return websocket_probe(link,timeout)
+
+
+def native_probe(link,timeout=15):
+    import json,os,subprocess,tempfile
+    from pathlib import Path
+    from .node_formats import parse_uri,singbox_outbound
+    start=time.monotonic()
+    outbound=singbox_outbound(parse_uri(link));outbound['tag']='node'
+    with socket.socket() as reservation:
+        reservation.bind(('127.0.0.1',0));port=reservation.getsockname()[1]
+    config={'log':{'level':'error'},'dns':{'servers':[{'type':'local','tag':'dns-direct'}]},
+            'inbounds':[{'type':'mixed','listen':'127.0.0.1','listen_port':port}],
+            'outbounds':[outbound],'route':{'final':'node','default_domain_resolver':{'server':'dns-direct','strategy':'prefer_ipv4'}}}
+    with tempfile.TemporaryDirectory(prefix='node-probe-') as temp:
+        file=Path(temp)/'config.json';file.write_text(json.dumps(config));file.chmod(0o600)
+        with open(os.devnull,'wb') as quiet:
+            process=subprocess.Popen(['/usr/local/bin/sing-box-probe','run','-c',str(file)],stdout=quiet,stderr=quiet,env=os.environ|{'GOMAXPROCS':'1'})
+            try:
+                for _ in range(40):
+                    if process.poll() is not None:raise ValueError('探测客户端启动失败')
+                    try:
+                        with socket.create_connection(('127.0.0.1',port),timeout=.1):break
+                    except OSError:time.sleep(.05)
+                result=subprocess.run(['curl','--noproxy','','--proxy',f'http://127.0.0.1:{port}','--connect-timeout','5','--max-time',str(timeout),'-fsS','-o',os.devnull,'-w','%{http_code}','https://www.gstatic.com/generate_204'],stdout=subprocess.PIPE,stderr=quiet,timeout=timeout+2)
+                if result.returncode or result.stdout!=b'204':raise ValueError('协议握手或 HTTPS 实际转发未通过（检查公网地址、映射端口和 TCP/UDP 放行）')
+                return {'ok':True,'latency_ms':round((time.monotonic()-start)*1000),'http_status':204}
+            finally:
+                process.terminate()
+                try:process.wait(timeout=3)
+                except subprocess.TimeoutExpired:process.kill();process.wait()
+
+
+def websocket_probe(link, timeout=15):
     start=time.monotonic();deadline=start+timeout
     u=urlparse(link);q=parse_qs(u.query)
     if u.scheme!='vless' or q.get('type')!=['ws'] or q.get('security')!=['tls']:
