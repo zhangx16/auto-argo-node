@@ -355,6 +355,8 @@ def accept_report(a,report):
             c.execute('UPDATE nodes SET share_link=?,uuid=?,sni=?,node_port=? WHERE id=?',(link,metadata.uuid,metadata.domain,metadata.local_port,node_id))
             c.execute('UPDATE deployments SET ws_path=? WHERE node_id=?',(metadata.path,node_id))
             if changed:c.execute("UPDATE node_agents SET probe_status='unknown',probe_at='',probe_error='',latency_ms=NULL WHERE node_id=?",(node_id,))
+        if not direct and old_domain and metadata and metadata.type!='fixed' and old_domain!=metadata.domain:
+            events.add(node_id,'tunnel','已同步临时隧道新域名，等待面板转发验证')
         events.health(node_id,report.state,report.process_alive,report.local_ws,report.public_ws,direct)
         if report.repair_count>a['repair_count']:
             events.add(node_id,'repair',f'自动修复次数增至 {report.repair_count}，当前上报状态 {report.state}','warning')

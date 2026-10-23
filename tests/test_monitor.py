@@ -46,3 +46,57 @@ class MonitorContracts(unittest.TestCase):
     def test_report_limits(self):
         for changes in [dict(singbox_rss=-1),dict(services=[self.payload()['services'][0]]*129)]:
             with self.assertRaises(ValidationError):monitor.ServiceReport.model_validate(self.payload()|changes)
+
+    def test_host_traffic_modes_unlimited_and_exceeded(self):
+        base={'month_rx':70,'month_tx':30,'traffic_limit':80,'traffic_reset_day':20,'month_start':'2026-10-20'}
+        for mode,used in [('sum',100),('up',30),('down',70),('max',70)]:
+            q=monitor.host_traffic(base|{'traffic_mode':mode})
+            self.assertEqual(q['used_bytes'],used);self.assertEqual(q['percent'],round(used/80*100,2))
+            self.assertEqual(q['remaining_bytes'],max(0,80-used));self.assertEqual(q['exceeded'],used>=80)
+            self.assertEqual(q['reset_day'],20);self.assertEqual(q['cycle_start'],'2026-10-20')
+        q=monitor.host_traffic(base|{'traffic_limit':0});self.assertIsNone(q['percent']);self.assertIsNone(q['remaining_bytes'])
+        self.assertFalse(q['exceeded']);self.assertIsNone(monitor.host_traffic(None))
+
+    def test_host_traffic_write_scoped_to_mapped_hub_host(self):
+        self.host()
+        body=monitor.HostTrafficRule(traffic_limit=1024**4,traffic_mode='up',traffic_reset_day=15)
+        with patch.object(monitor,'hub',return_value={'ok':True}) as hub:
+            self.assertEqual(monitor.set_host_traffic('fixture',body),{'ok':True})
+            hub.assert_called_once_with('/nodes/1','PUT',{'traffic_limit':1024**4,'traffic_mode':'up','traffic_reset_day':15})
+        from fastapi import HTTPException
+        with patch.object(monitor,'hub') as hub:
+            with self.assertRaises(HTTPException):monitor.set_host_traffic('missing',body)
+            hub.assert_not_called()
+        for invalid in [{'traffic_limit':-1},{'traffic_mode':'invalid'},{'traffic_reset_day':0},{'traffic_reset_day':32},{'traffic_limit':1.5},{'traffic_limit':2**61},{'name':'unexpected'},{'traffic_reset_day':True}]:
+            with self.assertRaises(ValidationError):monitor.HostTrafficRule(**invalid)
+
+    def test_host_classification_validation_and_persistence(self):
+        self.host()
+        self.assertEqual(monitor.set_host_group('fixture',monitor.HostGroup(group_name='  亚洲 / 家宽  ')),{'group_name':'亚洲 / 家宽'})
+        self.assertEqual(monitor.get_host('fixture')['group_name'],'亚洲 / 家宽')
+        monitor.set_host_group('fixture',monitor.HostGroup());self.assertEqual(monitor.get_host('fixture')['group_name'],'')
+        for v in ['x'*41,'bad\nname','bad\x00name']:
+            with self.assertRaises(ValidationError):monitor.HostGroup(group_name=v)
+        from fastapi import HTTPException
+        with self.assertRaises(HTTPException):monitor.set_host_group('missing',monitor.HostGroup(group_name='QA'))
+
+    def test_filtered_order_preserves_other_positions_and_rejects_stale_ids(self):
+        c=db.get_conn()
+        for i in range(4):c.execute('INSERT INTO monitor_hosts(id,name,hub_id,hub_token,token_hash,token_secret,sort_order) VALUES (?,?,?,?,?,?,?)',(f'host-{i}',f'Host {i}',i+1,'unused',f'hash-{i}','unused',i))
+        c.commit()
+        self.assertEqual(monitor.reorder_hosts(monitor.HostOrder(host_ids=['host-3','host-1']))['host_ids'],['host-0','host-3','host-2','host-1'])
+        self.assertEqual(monitor.ordered_host_ids(),['host-0','host-3','host-2','host-1'])
+        self.assertEqual(monitor.reorder_hosts(monitor.HostOrder(host_ids=['host-2','host-1','host-3','host-0']))['host_ids'],['host-2','host-1','host-3','host-0'])
+        from fastapi import HTTPException
+        before=monitor.ordered_host_ids()
+        with self.assertRaises(HTTPException):monitor.reorder_hosts(monitor.HostOrder(host_ids=['host-0','deleted-host']))
+        self.assertEqual(monitor.ordered_host_ids(),before)
+        for v in [[],['host-0','host-0'],[''],['x'*65]]:
+            with self.assertRaises(ValidationError):monitor.HostOrder(host_ids=v)
+
+    def test_monitor_schema_upgrade_keeps_existing_host_and_is_idempotent(self):
+        self.host();c=db.get_conn();before=monitor.get_host('fixture')
+        # Simulate the pre-sort production schema.
+        c.execute('ALTER TABLE monitor_hosts DROP COLUMN group_name');c.execute('ALTER TABLE monitor_hosts DROP COLUMN sort_order');c.commit()
+        monitor.init();monitor.init();after=monitor.get_host('fixture')
+        self.assertEqual(after['token_secret'],before['token_secret']);self.assertEqual(after['group_name'],'');self.assertEqual(after['sort_order'],0)

@@ -10,9 +10,10 @@ import time
 import urllib.request
 from pathlib import Path
 from uuid import uuid4
+from typing import Literal
 from fastapi import HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, PlainTextResponse
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import BaseModel, Field, ConfigDict, field_validator
 from . import db, cloudflare
 from .telemetry import Traffic
 
@@ -41,7 +42,11 @@ def init():
     CREATE TABLE IF NOT EXISTS monitor_nodes (
       node_id INTEGER PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
       host_id TEXT NOT NULL REFERENCES monitor_hosts(id) ON DELETE CASCADE);
-    ''');c.commit()
+    ''')
+    columns={r['name'] for r in c.execute('PRAGMA table_info(monitor_hosts)')}
+    for name,definition in [('group_name',"TEXT NOT NULL DEFAULT ''"),('sort_order','INTEGER NOT NULL DEFAULT 0')]:
+        if name not in columns:c.execute(f'ALTER TABLE monitor_hosts ADD COLUMN {name} {definition}')
+    c.commit()
 
 def digest(s):return hashlib.sha256(s.encode()).hexdigest()
 
@@ -56,6 +61,70 @@ def hub(path,method='GET',body=None):
             return json.loads(raw) if raw else {}
     except Exception as e:
         raise HTTPException(503,'Monitor 采集服务暂不可用') from e
+
+class HostTrafficRule(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    traffic_limit:int=Field(default=0,ge=0,le=2**60,strict=True)
+    traffic_mode:Literal['sum','up','down','max']='sum'
+    traffic_reset_day:int=Field(default=1,ge=1,le=31,strict=True)
+
+
+def host_traffic(remote):
+    if remote is None:return None
+    rx=max(0,int(remote.get('month_rx',0)));tx=max(0,int(remote.get('month_tx',0)))
+    mode=remote.get('traffic_mode','sum')
+    if mode not in ('sum','up','down','max'):mode='sum'
+    used={'sum':rx+tx,'up':tx,'down':rx,'max':max(rx,tx)}[mode]
+    limit=max(0,int(remote.get('traffic_limit',0)))
+    return {'limit_bytes':limit,'used_bytes':used,'rx':rx,'tx':tx,'count_mode':mode,
+      'reset_day':remote.get('traffic_reset_day',1),'cycle_start':remote.get('month_start',''),
+      'percent':round(used/limit*100,2) if limit else None,
+      'remaining_bytes':max(0,limit-used) if limit else None,'exceeded':bool(limit and used>=limit),'timezone':'UTC'}
+
+
+def set_host_traffic(host_id,body):
+    h=get_host(host_id)
+    hub(f"/nodes/{h['hub_id']}",'PUT',body.model_dump())
+    return {'ok':True}
+
+
+class HostGroup(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    group_name:str=Field(default='',max_length=40)
+    @field_validator('group_name')
+    @classmethod
+    def clean_group(cls,value):
+        from .labels import clean
+        return clean(value,40)
+
+class HostOrder(BaseModel):
+    model_config=ConfigDict(extra='forbid')
+    host_ids:list[str]=Field(min_length=1,max_length=2000)
+    @field_validator('host_ids')
+    @classmethod
+    def unique_hosts(cls,values):
+        if len(set(values))!=len(values) or any(not v or len(v)>64 for v in values):raise ValueError('服务器列表包含重复或无效编号')
+        return values
+
+
+def ordered_host_ids():
+    return [r['id'] for r in db.get_conn().execute('SELECT id FROM monitor_hosts ORDER BY sort_order,name,id')]
+
+
+def reorder_hosts(body):
+    c=db.get_conn();order=ordered_host_ids();selected=set(body.host_ids)
+    if not selected.issubset(set(order)):raise HTTPException(409,'服务器列表已变化，请刷新后重新排序')
+    replacement=iter(body.host_ids)
+    order=[next(replacement) if host_id in selected else host_id for host_id in order]
+    c.executemany('UPDATE monitor_hosts SET sort_order=? WHERE id=?',enumerate(order));c.commit()
+    return {'host_ids':order}
+
+
+def set_host_group(host_id,body):
+    get_host(host_id)
+    c=db.get_conn();c.execute('UPDATE monitor_hosts SET group_name=? WHERE id=?',(body.group_name,host_id));c.commit()
+    return {'group_name':body.group_name}
+
 
 def require_available():hub('/nodes')
 
@@ -78,7 +147,8 @@ def enrollment_for_node(node_id,host_id=None):
         except Exception:
             hub(f"/nodes/{remote['id']}",'DELETE');raise
         host_id=str(uuid4());token=secrets.token_urlsafe(32)
-        c.execute('INSERT INTO monitor_hosts(id,name,hub_id,hub_token,token_hash,token_secret) VALUES (?,?,?,?,?,?)',(host_id,node['remark'],remote['id'],cloudflare.encrypt(remote_token),digest(token),cloudflare.encrypt(token)));c.commit()
+        c.execute('INSERT INTO monitor_hosts(id,name,hub_id,hub_token,token_hash,token_secret) VALUES (?,?,?,?,?,?)',(host_id,node['remark'],remote['id'],cloudflare.encrypt(remote_token),digest(token),cloudflare.encrypt(token)))
+        c.execute('UPDATE monitor_hosts SET sort_order=(SELECT coalesce(max(sort_order),-1)+1 FROM monitor_hosts WHERE id!=?) WHERE id=?',(host_id,host_id));c.commit()
         h=get_host(host_id)
     c.execute('INSERT OR IGNORE INTO monitor_nodes VALUES (?,?)',(node_id,h['id']))
     token=secrets.token_urlsafe(32)
@@ -196,15 +266,30 @@ def register(app,owner,public_url):
         except HTTPException:remote=[];available=False
         if isinstance(remote,dict):remote=remote.get('nodes',[])
         byid={x['id']:x for x in remote};items=[]
-        for r in db.get_conn().execute('SELECT * FROM monitor_hosts ORDER BY name'):
+        for r in db.get_conn().execute('SELECT * FROM monitor_hosts ORDER BY sort_order,name,id'):
             metrics=byid.get(r['hub_id'],{})
             from . import regions
             linked=[dict(n) for n in db.get_conn().execute('SELECT n.id,n.remark,a.health_mode,a.management_enabled FROM monitor_nodes m JOIN nodes n ON n.id=m.node_id JOIN node_agents a ON a.node_id=n.id WHERE m.host_id=?',(r['id'],))]
             region_values=[regions.enrich(n) for n in linked]
             country=next((n['country_code'] for n in region_values if n['country_source']=='manual'),None)
             if country is None:country=next((n['country_code'] for n in region_values if n['country_code']),metrics.get('country',''))
-            items.append({'id':r['id'],'name':r['name'],'online':bool(metrics.get('online')),'last_seen':r['last_seen'],'stale':int(time.time())-r['last_seen']>180,'metrics':dict(metrics.get('metrics') or {},month_rx=metrics.get('month_rx',0),month_tx=metrics.get('month_tx',0)),'country':country,'os':metrics.get('os',''),'arch':metrics.get('arch',''),'health':json.loads(r['health']),'nodes':linked})
+            items.append({'id':r['id'],'name':r['name'],'group_name':r['group_name'],'sort_order':r['sort_order'],'online':bool(metrics.get('online')),'last_seen':r['last_seen'],'stale':int(time.time())-r['last_seen']>180,'metrics':dict(metrics.get('metrics') or {},month_rx=metrics.get('month_rx',0),month_tx=metrics.get('month_tx',0)),'country':country,'os':metrics.get('os',''),'arch':metrics.get('arch',''),'health':json.loads(r['health']),'nodes':linked,'traffic':host_traffic(byid.get(r['hub_id']))})
         return {'available':available,'hosts':items}
+    @app.put('/api/monitor/hosts/order')
+    def order_hosts(body:HostOrder,request:Request):
+        owner(request)
+        from . import agent
+        with agent.LOCK:return reorder_hosts(body)
+    @app.put('/api/monitor/hosts/{host_id}/group')
+    def group_host(host_id:str,body:HostGroup,request:Request):
+        owner(request)
+        from . import agent
+        with agent.LOCK:return set_host_group(host_id,body)
+    @app.put('/api/monitor/hosts/{host_id}/traffic')
+    def traffic_limit(host_id:str,body:HostTrafficRule,request:Request):
+        owner(request)
+        from . import agent
+        with agent.LOCK:return set_host_traffic(host_id,body)
     @app.get('/api/monitor/hosts/{host_id}/history')
     def history(host_id:str,request:Request,hours:int=24):
         owner(request);h=get_host(host_id)
@@ -360,4 +445,6 @@ def core_probe_result(node_id,revision,ok):
         c.execute('UPDATE core_rollouts SET revision=? WHERE node_id=?',(rev,node_id))
         events.add(node_id,'core','新核心转发验证失败，已排队恢复上一份核心','warning')
         state='rollback'
+    labels={'restored':'已恢复上一核心并通过实际转发验证','succeeded':'新核心已通过实际转发验证','rollback_failed':'核心回滚后转发仍失败，需要人工检查','unverified':'新核心转发验证失败，缺少成功基线，未自动回滚'}
+    if state in labels:events.add(node_id,'core',labels[state],'warning' if state in ('rollback_failed','unverified') else 'info')
     c.execute('UPDATE core_rollouts SET state=? WHERE node_id=?',(state,node_id));c.commit()

@@ -78,9 +78,9 @@ def tick():
                 c.execute('INSERT INTO traffic_quota_alerts VALUES (?,?,?,0)',(rule['node_id'],q['cycle_start'],threshold))
                 events.add(rule['node_id'],'quota',label+'；仅提醒，节点继续运行','warning')
                 c.commit()
-            if cfg.get('enabled') and cfg.get('chat_id') and (not old or not old['notified']):
+            if cfg.get('enabled') and cfg.get('chat_id') and cfg.get('alerts_quota',True) and (not old or not old['notified']):
                 telemetry.enqueue(f"quota:{rule['node_id']}:{q['cycle_start']}:{threshold}",
-                    f"⚠️ {label}\n节点：{rule['remark'][:80]}\n周期（UTC）：{q['cycle_start']} 至 {q['cycle_end']}（不含）\n用量：{telemetry.bytes_text(q['used_bytes'])} / {telemetry.bytes_text(q['limit_bytes'])}\n端口统计，仅供参考；不会自动停用节点。")
+                    telemetry.message_text('🚦 '+label,[('节点',telemetry.node_name(rule['node_id'])),('周期',q['cycle_start']+' → '+q['cycle_end']+'（不含，UTC）'),('用量',telemetry.bytes_text(q['used_bytes'])+' / '+telemetry.bytes_text(q['limit_bytes'])),('进度','▰'*min(10,int(q['percent']/10))+'▱'*max(0,10-int(q['percent']/10))+f" {q['percent']:.1f}%")],'端口统计，仅供参考；不会自动停用节点。'),category='quota',route='traffic-module',priority=2)
                 c.execute('UPDATE traffic_quota_alerts SET notified=1 WHERE node_id=? AND cycle_start=? AND threshold=?',(rule['node_id'],q['cycle_start'],threshold))
                 c.commit()
     c.execute("DELETE FROM traffic_quota_alerts WHERE cycle_start<date('now','-400 days')")
