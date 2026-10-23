@@ -1,0 +1,30 @@
+# Requires scripts/build-monitor.sh and scripts/prepare-core-releases.py outputs.
+services:
+  singbox-mgmt:
+    env_file: ./data/monitor-service.env
+    environment:
+      MONITOR_HUB_URL: http://monitor-hub:28080
+      ARGO_RELEASES: /app/releases
+    volumes:
+      - ./artifacts/releases:/app/releases:ro
+    depends_on:
+      monitor-hub:
+        condition: service_healthy
+  monitor-hub:
+    image: alpine:3.22
+    restart: unless-stopped
+    user: "65534:65534"
+    env_file: ./data/monitor-service.env
+    environment:
+      TZ: UTC
+    command: ["/monitor-hub", "--listen", "0.0.0.0:28080", "--db", "/data/monitor.db"]
+    volumes:
+      - ./artifacts/releases/monitor-hub-amd64:/monitor-hub:ro
+      - ./data/monitor:/data
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:28080/api/me"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    mem_limit: 128m
+    cpus: 1

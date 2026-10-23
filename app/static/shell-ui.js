@@ -11,10 +11,27 @@
  scrim.onclick=()=>closeMobile(true);
  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&document.body.classList.contains('mobile-nav-open'))closeMobile(true);if(e.key==='Tab'&&mobile()&&document.body.classList.contains('mobile-nav-open')){const links=sidebar.querySelectorAll('a[href]');if(e.shiftKey&&document.activeElement===links[0]){e.preventDefault();links[links.length-1].focus();}else if(!e.shiftKey&&document.activeElement===links[links.length-1]){e.preventDefault();links[0].focus();}}});
  function activate(target){document.querySelectorAll('.nav-link').forEach(a=>{const active=a.getAttribute('href')==='#'+target;a.classList.toggle('active',active);if(active)a.setAttribute('aria-current','location');else a.removeAttribute('aria-current');});const label=sidebar.querySelector('.nav-link.active span');if(label)document.getElementById('header-page').textContent=label.textContent;}
- function go(id){const section=document.getElementById(id);if(!section)return;if(section.tagName==='DETAILS')section.open=true;activate(id);const wasMobile=mobile();closeMobile();if(wasMobile){const focusTarget=section.tagName==='DETAILS'?section.querySelector('summary'):section.querySelector('h1,input');if(focusTarget){if(!focusTarget.matches('input,summary'))focusTarget.tabIndex=-1;focusTarget.focus({preventScroll:true});}}requestAnimationFrame(()=>section.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth',block:'start'}));}
- navLinks.forEach(a=>a.addEventListener('click',e=>{e.preventDefault();go(a.hash.slice(1));}));document.querySelector('.intro-create')?.addEventListener('click',e=>{e.preventDefault();go('deployment-module');document.getElementById('remark').focus({preventScroll:true});});
- const observed=['overview','deployment-module','node-module','task-module','subscription-module','traffic-module'].map(id=>document.getElementById(id)).filter(Boolean);
- let ticking=false;document.addEventListener('scroll',()=>{if(ticking)return;ticking=true;requestAnimationFrame(()=>{let current=observed[0];for(const n of observed){if(n.getBoundingClientRect().top<160)current=n;}if(current)activate(current.id);ticking=false;});},{passive:true});
+ const ids=['overview','deployment-module','node-module','task-module','subscription-module','resources-module','traffic-module'];
+ const surfaces=new Map(ids.map(id=>{const el=document.getElementById(id);return [id,el?.tagName==='SECTION'?el:el?.closest('section.panel')];}));
+ function go(id,push=true){
+  if(!ids.includes(id))id='overview';
+  const section=document.getElementById(id);if(!section)return;
+  for(const [key,el] of surfaces){if(el){el.hidden=key!==id;el.inert=key!==id;}}
+  document.querySelector('.layout > .note')?.setAttribute('hidden','');
+  const overviewMetrics=document.querySelector('.overview-grid');if(overviewMetrics)overviewMetrics.hidden=id!=='overview';
+  const layout=document.querySelector('main > .layout');if(layout)layout.hidden=id==='overview';
+  const logs=document.getElementById('logs-panel');if(logs&&id!=='task-module')logs.hidden=true;
+  document.body.dataset.activeModule=id;activate(id);closeMobile();
+  if(push&&location.hash!=='#'+id)history.pushState(null,'','#'+id);
+  const heading=section.querySelector('h1,h2');if(heading){heading.tabIndex=-1;heading.focus({preventScroll:true});}
+  document.dispatchEvent(new CustomEvent('module-navigate',{detail:{id}}));
+  window.scrollTo({top:0,behavior:'instant'});
+ }
+ navLinks.forEach(a=>a.addEventListener('click',e=>{e.preventDefault();go(a.hash.slice(1));}));
+ document.querySelector('.intro-create')?.addEventListener('click',e=>{e.preventDefault();go('deployment-module');document.getElementById('remark').focus({preventScroll:true});});
+ addEventListener('popstate',()=>go(location.hash.slice(1),false));
+ addEventListener('hashchange',()=>go(location.hash.slice(1),false));
+ go(location.hash.slice(1)||'overview',false);
  document.addEventListener('nodes-updated',e=>{if(!e.detail)return;for(const key of ['deployed','online','pending']){const n=document.getElementById('stat-'+key);if(n)n.textContent=String(e.detail[key]);}});
  matchMedia('(max-width:767px)').addEventListener('change',sync);sync();
 })();

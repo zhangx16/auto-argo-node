@@ -98,7 +98,7 @@ class AgentApiTests(unittest.TestCase):
         id,token,meta=self.initial_success()
         self.call(f'/api/agent-nodes/{id}','PATCH',{'remark':'Offline','node_port':18086,'client_address':'edge.example.com','client_port':443})
         _,work=self.agent_call('/agent/work',token);self.agent_call(f"/agent/job/{work['job']['revision']}.sh",token)
-        c=sqlite3.connect(Path(self.tmp.name)/'app.db');c.execute("UPDATE node_agents SET last_report_at='2020-01-01T00:00:00Z' WHERE node_id=?",(id,));c.commit();c.close()
+        c=sqlite3.connect(Path(self.tmp.name)/'app.db');c.execute("UPDATE node_agents SET health_mode='legacy',last_report_at='2020-01-01T00:00:00Z' WHERE node_id=?",(id,));c.commit();c.close()
         _,nodes=self.call('/api/nodes');n=next(n for n in nodes if n['id']==id);self.assertEqual(n['health_status'],'offline');self.assertEqual(n['status'],'offline')
     def test_bootstrap_uses_posix_shell_and_no_ssh_credentials(self):
         code=bootstrap_script('https://panel.example.com','test-token-for-syntax',12)

@@ -1,0 +1,225 @@
+{
+  "environment": {
+    "architecture": "x86_64",
+    "gomaxprocs": 1,
+    "gogc": "default",
+    "gomemlimit": "unset",
+    "connections": 0,
+    "scope": "loopback HTTPS+UDP warm-up; clients closed; each server binary has a separate inode",
+    "mode": "idle",
+    "idle_seconds": 150
+  },
+  "binaries": {
+    "official": {
+      "bytes": 81338597,
+      "sha256": "768d31fa7f68debc067bb4626539498a1e8751d36a7b99e1a54bee6a23815f93",
+      "version": "sing-box version 1.14.3\n\nEnvironment: go1.26.8 linux/amd64\nTags: with_gvisor,with_quic,with_dhcp,with_wireguard,with_utls,with_acme,with_clash_api,with_tailscale,with_ccm,with_ocm,with_cloudflared,with_naive_outbound,with_usbip,with_openvpn,with_openconnect,badlinkname,tfogo_checklinkname0,with_purego\nRevision: 7054cac5124465ffdb145870d7c01885566711b1\nCGO: disabled\n"
+    },
+    "minimal": {
+      "bytes": 40419490,
+      "sha256": "047a747e12037f0dcb6e6a12292ab2dc43cfe7db8652cdb2f263868e51adf077",
+      "version": "sing-box version 1.14.3\n\nEnvironment: go1.26.8 linux/amd64\nTags: with_quic,with_utls,badlinkname,tfogo_checklinkname0\nRevision: 7054cac5124465ffdb145870d7c01885566711b1\nCGO: disabled\n"
+    }
+  },
+  "runs": [],
+  "idle_runs": [
+    {
+      "protocol": "vless-ws",
+      "variant": "official",
+      "samples": [
+        {
+          "age_seconds": 0,
+          "rss_kib": 56140,
+          "pss_kib": 55099,
+          "private_clean_kib": 0,
+          "private_dirty_kib": 55072,
+          "swap_kib": 0,
+          "cpu_seconds": 0.04
+        },
+        {
+          "age_seconds": 30.0,
+          "rss_kib": 56140,
+          "pss_kib": 55098,
+          "private_clean_kib": 47264,
+          "private_dirty_kib": 7808,
+          "swap_kib": 0,
+          "cpu_seconds": 0.04
+        },
+        {
+          "age_seconds": 150.0,
+          "rss_kib": 60140,
+          "pss_kib": 59101,
+          "private_clean_kib": 47456,
+          "private_dirty_kib": 11616,
+          "swap_kib": 0,
+          "cpu_seconds": 0.08
+        }
+      ]
+    },
+    {
+      "protocol": "vless-ws",
+      "variant": "minimal",
+      "samples": [
+        {
+          "age_seconds": 0,
+          "rss_kib": 34996,
+          "pss_kib": 34992,
+          "private_clean_kib": 0,
+          "private_dirty_kib": 34992,
+          "swap_kib": 0,
+          "cpu_seconds": 0.04
+        },
+        {
+          "age_seconds": 30.0,
+          "rss_kib": 34996,
+          "pss_kib": 34992,
+          "private_clean_kib": 28560,
+          "private_dirty_kib": 6432,
+          "swap_kib": 0,
+          "cpu_seconds": 0.04
+        },
+        {
+          "age_seconds": 150.0,
+          "rss_kib": 37656,
+          "pss_kib": 37652,
+          "private_clean_kib": 28688,
+          "private_dirty_kib": 8964,
+          "swap_kib": 0,
+          "cpu_seconds": 0.07
+        }
+      ]
+    },
+    {
+      "protocol": "reality",
+      "variant": "official",
+      "samples": [
+        {
+          "age_seconds": 0,
+          "rss_kib": 56168,
+          "pss_kib": 55299,
+          "private_clean_kib": 0,
+          "private_dirty_kib": 55276,
+          "swap_kib": 0,
+          "cpu_seconds": 0.06
+        },
+        {
+          "age_seconds": 30.0,
+          "rss_kib": 56168,
+          "pss_kib": 55299,
+          "private_clean_kib": 47328,
+          "private_dirty_kib": 7948,
+          "swap_kib": 0,
+          "cpu_seconds": 0.06
+        },
+        {
+          "age_seconds": 150.0,
+          "rss_kib": 59812,
+          "pss_kib": 58944,
+          "private_clean_kib": 47520,
+          "private_dirty_kib": 11400,
+          "swap_kib": 0,
+          "cpu_seconds": 0.09
+        }
+      ]
+    },
+    {
+      "protocol": "reality",
+      "variant": "minimal",
+      "samples": [
+        {
+          "age_seconds": 0,
+          "rss_kib": 36008,
+          "pss_kib": 36004,
+          "private_clean_kib": 0,
+          "private_dirty_kib": 36004,
+          "swap_kib": 0,
+          "cpu_seconds": 0.04
+        },
+        {
+          "age_seconds": 30.0,
+          "rss_kib": 36008,
+          "pss_kib": 36004,
+          "private_clean_kib": 29260,
+          "private_dirty_kib": 6744,
+          "swap_kib": 0,
+          "cpu_seconds": 0.04
+        },
+        {
+          "age_seconds": 150.0,
+          "rss_kib": 39088,
+          "pss_kib": 39084,
+          "private_clean_kib": 29388,
+          "private_dirty_kib": 9696,
+          "swap_kib": 0,
+          "cpu_seconds": 0.09
+        }
+      ]
+    },
+    {
+      "protocol": "hysteria2",
+      "variant": "official",
+      "samples": [
+        {
+          "age_seconds": 0,
+          "rss_kib": 59184,
+          "pss_kib": 58165,
+          "private_clean_kib": 0,
+          "private_dirty_kib": 58140,
+          "swap_kib": 0,
+          "cpu_seconds": 0.05
+        },
+        {
+          "age_seconds": 30.0,
+          "rss_kib": 59316,
+          "pss_kib": 58298,
+          "private_clean_kib": 49952,
+          "private_dirty_kib": 8320,
+          "swap_kib": 0,
+          "cpu_seconds": 0.05
+        },
+        {
+          "age_seconds": 150.0,
+          "rss_kib": 62868,
+          "pss_kib": 61850,
+          "private_clean_kib": 50208,
+          "private_dirty_kib": 11616,
+          "swap_kib": 0,
+          "cpu_seconds": 0.1
+        }
+      ]
+    },
+    {
+      "protocol": "hysteria2",
+      "variant": "minimal",
+      "samples": [
+        {
+          "age_seconds": 0,
+          "rss_kib": 37080,
+          "pss_kib": 37076,
+          "private_clean_kib": 3968,
+          "private_dirty_kib": 33108,
+          "swap_kib": 0,
+          "cpu_seconds": 0.05
+        },
+        {
+          "age_seconds": 30.0,
+          "rss_kib": 37080,
+          "pss_kib": 37076,
+          "private_clean_kib": 30224,
+          "private_dirty_kib": 6852,
+          "swap_kib": 0,
+          "cpu_seconds": 0.05
+        },
+        {
+          "age_seconds": 150.0,
+          "rss_kib": 39632,
+          "pss_kib": 39628,
+          "private_clean_kib": 30288,
+          "private_dirty_kib": 9340,
+          "swap_kib": 0,
+          "cpu_seconds": 0.1
+        }
+      ]
+    }
+  ]
+}

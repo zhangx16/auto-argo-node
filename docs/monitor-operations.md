@@ -1,0 +1,83 @@
+# Monitor 与精简核心运维
+
+## 页面与安装
+
+左侧导航切换独立模块，右侧仅显示选中模块；地址 hash 可刷新、返回。新增节点默认只部署协议，可选择精简/原版核心，单独勾选生成探针命令以及启用远程管理。
+
+- **协议命令**：部署所选入站及必要的运行依赖，一次性回传结果。不开启远程管理就不添加面板 agent 定时任务。Argo 自身的隧道守护仍需要 cron，它属于协议运行依赖。
+- **探针命令**：协议部署后单独执行；安装 Monitor Rust 探针、脱敏状态发布器和可选端口统计所需依赖。当前安装默认启用端口计数；移除节点上的 `/var/lib/argo-monitor/accounting` 可停用后续端口采集，已有历史保留。
+- **远程管理**：勾选后使用独立的一分钟任务执行器。资源探针只上报，不执行面板下发命令。不启用时，修改、核心切换和删除需要执行面板给出的手动命令。
+- **同机多协议**：资源看板中选择“关联同机节点”，按节点编号关联已有主机，再执行生成的命令；不会安装第二份探针。不要用 IP 自动合并主机，DDNS 与共享 NAT 出口并不能可靠识别服务器。
+- **卸载探针**：资源卡片提供独立卸载命令。协议保留；已启用管理的节点恢复旧心跳方式，未启用管理的节点回到外部转发检测。
+
+## 构建与启动
+
+节点无需编译器。以下操作在构建机/面板主机执行；当前 hub 发布目标是 Linux amd64，探针与协议核心同时提供 amd64、arm64。
+
+```sh
+sh scripts/build-minimal-core.sh
+# 构建机需安装 Rust、musl-gcc、Node 24、npm、cargo-zigbuild 和 Zig；
+# Rust 目标需包含 x86_64-unknown-linux-musl、aarch64-unknown-linux-musl。
+sh scripts/build-monitor.sh
+python3 scripts/prepare-core-releases.py
+sudo python3 scripts/init-monitor.py
+
+docker compose -f docker-compose.yml -f docker-compose.monitor.yml up -d --build
+```
+
+源码固定到评估报告记录的提交，集成差异由 `integrations/monitor/patch.py` 与 `argo.rs` 应用；MIT 许可随仓库保留。发布文件在 `artifacts/releases`，由 SHA-256 清单校验，经面板 HTTPS 下载。该目录及私有 `data` 不提交 Git。
+
+`data/monitor-service.env` 只用于本机服务认证，hub 不发布宿主机端口。业务面板与 hub 各持有独立 SQLite；浏览器仅登录原面板。关闭上游公开状态页，内部认证入口限定主机管理范围，不授予修改其他 hub 管理设置的权限。
+
+自定义 Nginx 反代必须为 `/monitor/api/agent/ws` 转发 `Upgrade` 和 `Connection: upgrade`，关闭缓冲，读超时至少 180 秒；凭据只在 Authorization 头，不进入 WebSocket URL。
+
+```nginx
+location = /monitor/api/agent/ws {
+    proxy_pass http://127.0.0.1:18899;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_read_timeout 180s;
+    proxy_send_timeout 180s;
+    proxy_buffering off;
+}
+```
+
+## 检测与修复职责
+
+资源每 10 秒上报；Rust 探针每 30 秒读取本地服务快照、监听和进程状态。主机上每分钟运行一次短任务，只发布脱敏元数据和 nft 计数；无历史数据库。探针读取这些文件，不读取 root 凭据。
+
+资源与健康共用一条 WSS：面板转交标准资源消息给 Monitor hub，私有健康消息在面板验证主机、节点、端口和配置修订后处理。此实现将评估中的两路连接合并，减少节点连接数；hub 仍负责资源历史。
+
+真实 VLESS/Reality/Hysteria2 转发检查继续在面板执行，不依赖节点心跳新鲜。不安装探针显示“未启用主机监控”，仍可测活与接收转发异常通知。采集服务故障时暂缓批量心跳告警，外部检查继续运行。
+
+启用管理的节点在持续本地故障或面板转发失败时进行受控修复，并保留冷却时间。探针观察云隧道进程与协议监听，但这些观察不能替代真实转发。流媒体检测也留在面板。
+
+临时隧道变化由状态发布器提供域名，面板只接受关联节点、有效修订及匹配路径的更新；固定域名受已有绑定约束。资源采集得到的 IP 不覆盖订阅里的 DDNS、优选地址或固定隧道。
+
+## 核心切换与回滚
+
+节点操作中的“核心版本 / 回滚”支持 `minimal`、`original`、`rollback`。新建节点遇到已有核心时不会自动替换共享核心；应使用此操作显式切换。
+
+- 默认版本固定为 sing-box 1.14.3；已有 1.13.21 版本锁的节点保留该版本，使用同版本精简/原版文件，不解除版本锁。下载检查 SHA-256 和可执行版本，先校验完整现有配置。
+- 每台保留一个 `/usr/local/etc/sing-box/core-rollback` 槽位，包括上一核心和参考配置。参考配置不在回滚时自动覆盖当前配置。
+- 本地校验或服务启动失败会回退；切换成功后由面板验证转发。有新鲜成功基线但验证失败时，排队恢复上一核心；未启用管理则需要执行待处理任务命令。
+- 同一关联主机的配置任务串行。共享核心重启会影响该主机所有入站，回滚前也需检查当前配置是否兼容旧核心。
+- 原版通道保留；升级管理脚本时另保留一个 `management-rollback` 目录，升级前的面板镜像可作为管理实现恢复来源。
+
+## 统计口径与限制
+
+资源卡片是主机网卡流量；原“流量与通知”及订阅用量继续使用端口计数，两者不能相加或替换。同一端口的多个订阅仍共享节点用量，并不是用户级计费。
+
+实际生产迁移会记录资源和转发结果，但短时试点不代表已经完成 24 小时耐久测试。低内存容器、不同核心版本及实际负载之间不能直接套用实验室节省比例。32 位 ARM 不支持此次发布通道；监控服务端在 ARM 主机上的构建另需适配。
+
+## 验证与排错
+
+- `tests/test_monitor.py`：主机权限、修订约束、独立安装、管理回执不覆盖探针心跳。
+- `tests/test_core_install.py`：完整性失败、回滚配置保护、上一核心恢复。需要 bash、jq。
+- `tests/integration_monitor.py`：隔离的真实 Rust 探针与 hub，通过面板网关运行超过 120 秒，再停协议服务确认故障检测。
+- `tests/integration_protocol_only.py`：一次性 Alpine/OpenRC 容器中安装三种协议，实际转发、检查不存在面板巡检/资源 cron，再手动卸载。测试容器必须使用 `--init`，避免僵尸进程干扰 OpenRC。
+
+节点诊断入口保留：`sh /usr/local/lib/argo-deploy/diagnose.sh 节点编号`。探针状态用 `systemctl status argo-monitor` 或 `rc-service argo-monitor status`；OpenRC 错误日志为 `/var/log/argo-monitor.log`，发布器将其限制为有界尾部。不要公开环境凭据文件。

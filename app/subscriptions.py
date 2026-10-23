@@ -47,6 +47,10 @@ def init():
     if 'chain_only' not in columns:c.execute('ALTER TABLE subscriptions ADD COLUMN chain_only INTEGER NOT NULL DEFAULT 0')
     if 'traffic_limit_bytes' not in columns:c.execute('ALTER TABLE subscriptions ADD COLUMN traffic_limit_bytes INTEGER NOT NULL DEFAULT 0')
     c.commit()
+    from . import sources
+    sources.init()
+    from . import media_unlock
+    media_unlock.init()
 
 
 class SubscriptionBody(BaseModel):
@@ -125,10 +129,10 @@ def describe(subscription, public_url, secret):
     result.update(enabled=bool(subscription['enabled']), expired=expired(subscription),
                   node_ids=[n['id'] for n in members], external_node_ids=[n['id'] for n in imported],
                   node_count=len(members)+len(imported), managed_node_count=len(members), external_node_count=len(imported),
-                  exportable_count=sum(eligible(n) for n in members)+sum(bool(n['enabled']) for n in imported))
+                  exportable_count=sum(eligible(n) for n in members)+sum(external_nodes.available(n) for n in imported))
     base = f"{public_url()}/subscribe/{subscription['id']}/{token_for(subscription, secret)}"
     chains=proxy_chains.configured(subscription)
-    available={('managed',n['id']) for n in members if eligible(n)}|{('external',n['id']) for n in imported if n['enabled']}
+    available={('managed',n['id']) for n in members if eligible(n)}|{('external',n['id']) for n in imported if external_nodes.available(n)}
     errors=proxy_chains.errors(chains,available)
     result.pop('chains_json',None)
     result.update(chains=chains,chain_only=bool(subscription.get('chain_only')),chain_count=len(chains),chain_errors=errors)
@@ -136,6 +140,7 @@ def describe(subscription, public_url, secret):
         result['exportable_count']=0 if errors else len(chains)+(0 if result['chain_only'] else result['exportable_count'])
     result['usage']=usage(subscription,members,imported)
     result['formats']=['clash','singbox'] if chains else list(FORMATS)
+    result['page_url']=f"{public_url()}/subscription/{subscription['id']}/{token_for(subscription,secret)}"
     result['urls'] = {fmt: base + '?format=' + fmt for fmt in result['formats']}
     return result
 
@@ -194,7 +199,7 @@ def usage(subscription,members=None,imported=None):
     if subscription.get('chain_only') and chains:
         used={(h['kind'],h['id']) for chain in chains for h in chain['hops']}
     ids={n['id'] for n in members if eligible(n) and (used is None or ('managed',n['id']) in used)}
-    external=sum(bool(n['enabled']) and (used is None or ('external',n['id']) in used) for n in imported)
+    external=sum(external_nodes.available(n) and (used is None or ('external',n['id']) in used) for n in imported)
     upload=download=measured=stale=0;since=[];now=int(datetime.now(timezone.utc).timestamp())
     c=db.get_conn()
     if ids and c.execute("SELECT 1 FROM sqlite_master WHERE name='traffic_totals'").fetchone():
@@ -227,7 +232,7 @@ def parse_node(node, name):
 def render(subscription, fmt):
     members = [n for n in member_nodes(subscription['id']) if eligible(n)]
     members += [dict(n, share_link=n['uri'], remark=n['name'], source_kind='external')
-                for n in external_members(subscription['id']) if n['enabled']]
+                for n in external_members(subscription['id']) if external_nodes.available(n)]
     chains=proxy_chains.configured(subscription)
     if chains and fmt in ('raw','base64'):raise HTTPException(409,'链式代理仅支持 Clash/Mihomo 或 sing-box 完整配置，普通节点链接和 Base64 无法保留链路关系')
     available={('external' if n.get('source_kind')=='external' else 'managed',n['id']) for n in members}
@@ -284,6 +289,10 @@ def register(app, require_login, public_url, secret):
             raise HTTPException(403, '请求来源不匹配')
 
     external_nodes.register(app, owner)
+    from . import sources
+    sources.register(app,owner)
+    from . import media_unlock
+    media_unlock.register(app,owner)
 
     def response(subscription, fmt, download=False):
         text, media, ext, count = render(subscription, fmt)
@@ -339,6 +348,41 @@ def register(app, require_login, public_url, secret):
     def export(subscription_id: int, request: Request, format: Format = 'base64', download: bool = True):
         owner(request)
         return response(get(subscription_id), format, download)
+
+    def authorized(subscription_id,token):
+        try:subscription=get(subscription_id)
+        except HTTPException:raise HTTPException(404,'订阅不存在或已失效')
+        if (len(token)!=64 or any(c not in '0123456789abcdef' for c in token) or not subscription['enabled'] or expired(subscription)
+                or not hmac.compare_digest(token_for(subscription,secret),token)):
+            raise HTTPException(404,'订阅不存在或已失效')
+        return subscription
+
+    @app.get('/subscription/{subscription_id}/{token}')
+    def landing(subscription_id:int,token:str):
+        authorized(subscription_id,token)
+        from fastapi.responses import FileResponse
+        from pathlib import Path
+        return FileResponse(Path(__file__).parent/'static'/'subscription.html',headers={'Cache-Control':'no-store','X-Robots-Tag':'noindex, nofollow','Referrer-Policy':'no-referrer'})
+
+    @app.get('/subscription/{subscription_id}/{token}/data')
+    def landing_data(subscription_id:int,token:str):
+        from fastapi.responses import JSONResponse
+        from . import labels
+        subscription=authorized(subscription_id,token)
+        described=describe(subscription,public_url,secret)
+        cards=[]
+        if not described['chain_only']:
+            for n in member_nodes(subscription_id):
+                if not eligible(n):continue
+                n=labels.enrich(regions.enrich(n))
+                cards.append({'name':n.get('display_name',n['remark']),'protocol':urlsplit(n['share_link']).scheme,'group_name':n['group_name'],'tags':n['tags'],'kind':'managed'})
+            for n in external_members(subscription_id):
+                if not external_nodes.available(n):continue
+                n=external_nodes.describe(n)
+                cards.append({'name':n.get('display_name',n['name']),'protocol':n['protocol'],'group_name':n['group_name'],'tags':n['tags'],'kind':'external'})
+        cards.extend({'name':chain['name'],'protocol':'chain','group_name':'链式代理','tags':[],'kind':'chain'} for chain in described['chains'])
+        return JSONResponse({k:described[k] for k in ('name','expires_at','formats','urls','usage','exportable_count','chain_errors')}|{'nodes':cards},
+            headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow'})
 
     @app.get('/subscribe/{subscription_id}/{token}')
     def subscribe(subscription_id: int, token: str, format: Format = 'base64'):

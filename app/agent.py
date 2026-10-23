@@ -15,7 +15,8 @@ from uuid import uuid4
 from fastapi import HTTPException, Request, Header
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field, field_validator
-from . import db, deploy, cloudflare, direct_nodes, telemetry, regions
+from .resources import Sample as ResourceSample
+from . import db, deploy, cloudflare, direct_nodes, telemetry, regions, events, quotas, changes, labels, resources
 
 ROOT=Path(__file__).parent
 LOCK=deploy.START_LOCK
@@ -48,9 +49,19 @@ def init():
         PRIMARY KEY(node_id,revision));''')
     if 'agent_version' not in [x['name'] for x in c.execute('PRAGMA table_info(node_agents)')]:
         c.execute('ALTER TABLE node_agents ADD COLUMN agent_version INTEGER NOT NULL DEFAULT 1')
+    columns={x['name'] for x in c.execute('PRAGMA table_info(node_agents)')}
+    for name,definition in [('health_mode',"TEXT NOT NULL DEFAULT 'legacy'"),('management_enabled','INTEGER NOT NULL DEFAULT 1'),('core_channel',"TEXT NOT NULL DEFAULT 'legacy'")]:
+        if name not in columns:c.execute(f'ALTER TABLE node_agents ADD COLUMN {name} {definition}')
     c.commit()
+    from . import monitor
+    monitor.init()
     direct_nodes.init()
     telemetry.init()
+    resources.init()
+    events.init()
+    quotas.init()
+    changes.init()
+    labels.init()
     regions.init()
 
 
@@ -68,7 +79,7 @@ def age(stamp):
 
 def enrich(node):
     a=row(node['id'])
-    if not a:return node
+    if not a:return labels.enrich(node)
     node.update(management='agent',agent_bound=bool(a['bound']),health_status=a['health_status'],
                 last_report_at=a['last_report_at'],process_alive=bool(a['process_alive']),local_ws=bool(a['local_ws']),
                 public_ws=bool(a['public_ws']),failure_count=a['failure_count'],repair_count=a['repair_count'],
@@ -77,14 +88,19 @@ def enrich(node):
     job=db.get_conn().execute("SELECT status FROM agent_jobs WHERE node_id=? AND revision=?",(node['id'],a['desired_revision'])).fetchone()
     node['job_status']=job['status'] if job else 'done'
     if db.get_node(node['id'])['status']=='uninstalling':node['status']='uninstalling';node['deleting']=True
-    if a['bound'] and age(a['last_report_at'])>180:
-        node['health_status']='offline'
-        node['status']='offline'
+    if a['bound'] and a.get('health_mode','legacy')!='none' and age(a['last_report_at'])>180:
+        from . import monitor
+        if a.get('health_mode')=='monitor' and not monitor.collector_available():node['health_status']='collector_unavailable'
+        else:node['health_status']='offline';node['status']='offline'
+    node.update(health_mode=a.get('health_mode','legacy'),management_enabled=bool(a.get('management_enabled',1)),core_channel=a.get('core_channel','legacy'))
+    if node['health_mode']=='none':node['health_status']='unmonitored'
     b=cloudflare.binding(node['id'])
     desired=json.loads(a['desired_json'])
     node['protocol']=desired.get('protocol','vless-ws-argo')
     mode='fixed' if (b and b['status']=='active') or (not node.get('share_link') and desired.get('tunnel_mode')=='fixed') else 'temp'
     node.update(agent_version=a.get('agent_version',1),tunnel_mode=mode,fixed_hostname=b['hostname'] if b else desired.get('fixed_hostname',''),fixed_status=b['status'] if b else '')
+    node.update(changes.public(node['id']))
+    node.update(labels.enrich(node))
     node.pop('install_cmd',None);node.pop('uninstall_cmd',None)
     return node
 
@@ -98,6 +114,9 @@ class AgentEditBody(deploy.NodeEditBody):
         return v
 
 class CreateBody(AgentEditBody):
+    core_channel: Literal['minimal','original']='minimal'
+    install_monitor: bool=False
+    management_enabled: bool=False
     protocol: Literal['vless-ws-argo','reality','hysteria2']='vless-ws-argo'
     server_name: str=Field(default='www.amd.com',pattern=r'^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z]{2,63}$',max_length=253)
     @field_validator('server_name')
@@ -138,6 +157,7 @@ class Metadata(BaseModel):
     def uuid_valid(cls,v):return deploy.DeployBody.uuid_valid(v)
 
 class Report(BaseModel):
+    resources: ResourceSample | None=None
     traffic: telemetry.Traffic | None=None
     agent_version: int=Field(default=1,ge=1,le=100)
     state: str=Field(pattern=r'^(waiting|installing|online|degraded|network_error|repairing|error)$')
@@ -193,7 +213,9 @@ def enrollment(node_id):
 def enqueue(node_id,operation,config):
     a=row(node_id);revision=a['desired_revision']+1;c=db.get_conn()
     c.execute('INSERT INTO agent_jobs(node_id,revision,operation,config_json,created_at) VALUES (?,?,?,?,?)',(node_id,revision,operation,json.dumps(config),db.utcnow()))
-    c.execute('UPDATE node_agents SET desired_revision=?,desired_json=?,last_job_error=\'\' WHERE node_id=?',(revision,json.dumps(config),node_id));c.commit()
+    c.execute('UPDATE node_agents SET desired_revision=?,desired_json=?,last_job_error=\'\' WHERE node_id=?',(revision,json.dumps(config),node_id))
+    events.add(node_id,'job',f'已排队任务 {operation}，配置版本 {revision}')
+    c.commit()
     db.update_node(node_id,status='installing' if a['bound'] else 'pending',last_error='')
     db.add_log(node_id,'已排队配置任务，等待节点下一次连接面板')
     return revision
@@ -202,6 +224,7 @@ def enqueue(node_id,operation,config):
 def edit(node_id,body):
     if db.get_node(node_id) and db.get_node(node_id)['status']=='uninstalling':raise HTTPException(409,'节点正在等待卸载')
     a=ensure_node(node_id);n=db.get_node(node_id)
+    changes.guard(node_id)
     protocol=json.loads(a['desired_json']).get('protocol','vless-ws-argo')
     if protocol=='vless-ws-argo':
         if body.node_port<1024:raise HTTPException(400,'Argo 本地端口应为 1024–65535')
@@ -210,6 +233,13 @@ def edit(node_id,body):
     elif not body.client_address:raise HTTPException(400,'请输入公网连接地址')
     running=db.get_conn().execute("SELECT 1 FROM agent_jobs WHERE node_id=? AND status IN ('queued','running')",(node_id,)).fetchone()
     desired=json.loads(a['desired_json'])
+    current_port=db.get_conn().execute('SELECT client_port FROM deployments WHERE node_id=?',(node_id,)).fetchone()['client_port']
+    connection_changed=(body.node_port!=desired['node_port'] or body.client_address!=n['client_address'] or body.client_port!=current_port)
+    if body.node_port!=desired['node_port'] and cloudflare.binding(node_id):
+        raise HTTPException(409,'固定隧道请保持监听端口；优选地址与客户端端口可正常修改')
+    if connection_changed and n['share_link']:
+        if running:raise HTTPException(409,'已有任务等待执行，请完成后再修改连接配置')
+        changes.begin(node_id)
     if body.node_port!=desired['node_port']:
         if cloudflare.binding(node_id):raise HTTPException(409,'固定隧道试运行期间请保持监听端口；优选地址与客户端端口可正常修改')
         desired['node_port']=body.node_port
@@ -218,10 +248,11 @@ def edit(node_id,body):
             db.update_node(node_id,node_port=body.node_port)
         else:
             if running:raise HTTPException(409,'请先完成当前安装或配置任务，再修改监听端口')
-            if protocol in direct_nodes.KINDS:desired.update(client_address=body.client_address,client_port=body.client_port,remark=body.remark)
+            desired.update(client_address=body.client_address,client_port=body.client_port,remark=body.remark)
             enqueue(node_id,'update' if n['share_link'] else 'install',desired)
             if protocol in direct_nodes.KINDS:
                 db.add_log(node_id,'直连端口变更已排队；保留当前链接，执行成功后同步新映射端口')
+                changes.track(node_id)
                 return enrich(deploy.enrich(db.get_node(node_id)))
     # Rebuild the client link immediately using the actual, currently applied metadata.
     link=n['share_link']
@@ -232,9 +263,15 @@ def edit(node_id,body):
         else:link=deploy.make_link({'domain':n['sni'],'uuid':n['uuid'],'path':path},body)
     db.update_node(node_id,remark=body.remark,client_address=body.client_address,share_link=link)
     c=db.get_conn();c.execute('UPDATE deployments SET client_port=? WHERE node_id=?',(body.client_port,node_id))
+    current_desired=json.loads(row(node_id)['desired_json'])
+    current_desired.update(remark=body.remark,client_address=body.client_address,client_port=body.client_port)
+    c.execute('UPDATE node_agents SET desired_json=? WHERE node_id=?',(json.dumps(current_desired),node_id))
+    if not a['bound'] and not n['share_link'] and a['applied_revision']==0:
+        c.execute("UPDATE agent_jobs SET config_json=? WHERE node_id=? AND status='queued'",(json.dumps(current_desired),node_id))
     if link!=n['share_link']:c.execute("UPDATE node_agents SET probe_status='unknown',probe_at='',probe_error='',latency_ms=NULL WHERE node_id=?",(node_id,))
     c.commit()
-    if link!=n['share_link'] and a['bound']:schedule_probe(node_id)
+    changes.track(node_id)
+    if a['bound'] and (link!=n['share_link'] or changes.needs_confirmation(node_id,link)):schedule_probe(node_id)
     db.add_log(node_id,'面板参数已保存；远端端口以节点确认执行后的结果为准')
     return enrich(deploy.enrich(db.get_node(node_id)))
 
@@ -256,6 +293,11 @@ def accept_report(a,report):
             for line in report.logs:db.add_log(node_id,line)
         db.get_conn().execute('UPDATE node_agents SET last_report_at=? WHERE node_id=?',(db.utcnow(),node_id));db.get_conn().commit()
         return {'ok':True,'applied_revision':a['applied_revision']}
+    from . import monitor
+    external_health=a.get('health_mode')=='monitor' and not getattr(report,'monitor_observation',False)
+    if external_health:
+        report.state=a['health_status'] if a['health_status'] in ('online','degraded','waiting') else 'waiting'
+        report.process_alive=bool(a['process_alive']);report.local_ws=bool(a['local_ws']);report.public_ws=bool(a['public_ws'])
     metadata=report.metadata
     b=cloudflare.binding(node_id)
     protocol=json.loads(a['desired_json']).get('protocol','vless-ws-argo')
@@ -289,7 +331,7 @@ def accept_report(a,report):
         c.execute('UPDATE node_agents SET agent_version=max(agent_version,?) WHERE node_id=?',(report.agent_version,node_id))
         if job and report.job_ok and metadata.type=='fixed':cloudflare.commit(node_id,metadata.local_port)
         c.execute('UPDATE node_agents SET last_report_at=?,health_status=?,process_alive=?,local_ws=?,public_ws=?,failure_count=?,last_repair=?,repair_count=? WHERE node_id=?',
-                  (db.utcnow(),report.state,int(report.process_alive),int(report.local_ws),int(report.public_ws),report.failure_count,report.last_repair,report.repair_count,node_id))
+                  (a['last_report_at'] if external_health else db.utcnow(),report.state,int(report.process_alive),int(report.local_ws),int(report.public_ws),a['failure_count'] if external_health else report.failure_count,report.last_repair,report.repair_count,node_id))
         if job:
             state='done' if report.job_ok else 'failed'
             c.execute('UPDATE agent_jobs SET status=?,finished_at=? WHERE node_id=? AND revision=?',(state,db.utcnow(),node_id,report.job_revision))
@@ -298,9 +340,11 @@ def accept_report(a,report):
             else:
                 c.execute('UPDATE node_agents SET last_job_error=? WHERE node_id=?',(report.error or '节点任务执行失败',node_id))
         if metadata:
-            values=json.loads(job['config_json']) if direct and job and report.job_ok else {}
+            values=json.loads(job['config_json']) if job and report.job_ok else {}
+            restored=changes.restored_parameters(node_id,report.job_revision) if job and report.job_ok else {}
+            values.update(restored)
             body=AgentEditBody(remark=values.get('remark',node['remark']),node_port=metadata.local_port,client_address=values.get('client_address',node['client_address']),client_port=values.get('client_port',db.get_conn().execute('SELECT client_port FROM deployments WHERE node_id=?',(node_id,)).fetchone()['client_port']))
-            if direct and job and report.job_ok:
+            if (job and report.job_ok and ('client_address' in values or direct)) or restored:
                 c.execute('UPDATE nodes SET remark=?,client_address=? WHERE id=?',(body.remark,body.client_address,node_id))
                 c.execute('UPDATE deployments SET client_port=? WHERE node_id=?',(body.client_port,node_id))
             if direct:
@@ -311,7 +355,13 @@ def accept_report(a,report):
             c.execute('UPDATE nodes SET share_link=?,uuid=?,sni=?,node_port=? WHERE id=?',(link,metadata.uuid,metadata.domain,metadata.local_port,node_id))
             c.execute('UPDATE deployments SET ws_path=? WHERE node_id=?',(metadata.path,node_id))
             if changed:c.execute("UPDATE node_agents SET probe_status='unknown',probe_at='',probe_error='',latency_ms=NULL WHERE node_id=?",(node_id,))
+        events.health(node_id,report.state,report.process_alive,report.local_ws,report.public_ws,direct)
+        if report.repair_count>a['repair_count']:
+            events.add(node_id,'repair',f'自动修复次数增至 {report.repair_count}，当前上报状态 {report.state}','warning')
+        if job:
+            events.add(node_id,'job',f'配置版本 {report.job_revision} '+('执行成功，等待转发验证' if report.job_ok else '执行失败，保留原监听配置'),'info' if report.job_ok else 'warning')
         telemetry.record(node_id,report.traffic)
+        resources.record(node_id,report.resources)
         c.commit()
     except Exception:c.rollback();raise
     latest=row(node_id)
@@ -326,12 +376,18 @@ def accept_report(a,report):
     if job:
         db.add_log(node_id,f'配置版本 {report.job_revision} '+('执行成功' if report.job_ok else '执行失败：'+report.error))
         for line in report.logs:db.add_log(node_id,line)
-    if changed and metadata and report.state!='installing':schedule_probe(node_id)
+    verify_restored=changes.job_result(node_id,report.job_revision,report.job_ok) if job else False
+    if changed:changes.retarget(node_id)
+    verify_core=monitor.core_job_result(node_id,job,report.job_ok) if job else False
+    if verify_core or verify_restored or (changed and metadata and report.state!='installing'):schedule_probe(node_id)
     return {'ok':True,'applied_revision':latest['applied_revision']}
 
 
 def job_script(a,job):
     config=json.loads(job['config_json']);n=deploy.enrich(db.get_node(a['node_id']))
+    if job['operation'] in ('core','core_rollback','monitor_install'):
+        from . import monitor
+        return monitor.job_script(a,job)
     if job['operation']=='uninstall':
         if config.get('protocol') in direct_nodes.KINDS:return direct_nodes.uninstall(a['node_id'],config,job['revision'])
         return (ROOT/'node-uninstall.sh').read_text().replace('__NODE_ID__',str(a['node_id'])).replace('__UUID__',shlex.quote(config['uuid'])).replace('__REVISION__',str(job['revision']))
@@ -370,7 +426,7 @@ def request_delete(node):
     enqueue(node['id'],'uninstall',config)
     db.update_node(node['id'],status='uninstalling')
     db.add_log(node['id'],'已排队远端卸载，收到清理成功确认后自动删除记录')
-    return {'ok':True,'pending':True}
+    return {'ok':True,'pending':True,'manual_command':None if a['management_enabled'] else f"sh /usr/local/lib/argo-deploy/agent.sh /usr/local/etc/argo-deploy/node-{node['id']}"}
 
 
 def force_delete(node):
@@ -387,22 +443,44 @@ def deletion_blocked(node):
 
 def schedule_probe(node_id):
     with PROBE_LOCK:
-        if node_id in PROBING:return False
-        if len(PROBING)>=2:return False
+        if node_id in PROBING or len(PROBING)>=2:return False
         n=db.get_node(node_id)
-        if not n or not n['share_link']:return False
+        if not n or not n['share_link'] or n['status']=='uninstalling':return False
+        a=row(node_id)
+        if not a:return False
+        revision=a['applied_revision']
         PROBING.add(node_id)
     c=db.get_conn();c.execute("UPDATE node_agents SET probe_status='pending' WHERE node_id=?",(node_id,));c.commit()
     def run():
+        again=False
         try:
             from .node_probe import probe_link
-            result=probe_link(n['share_link']);state='ok';error='';latency=result['latency_ms']
-        except Exception as e:state='failed';error=(type(e).__name__+': '+str(e))[:300];latency=None
-        try:
-            conn=db.get_conn()
-            conn.execute('UPDATE node_agents SET probe_status=?,probe_at=?,probe_error=?,latency_ms=? WHERE node_id=? AND EXISTS (SELECT 1 FROM nodes WHERE id=? AND share_link=?)',(state,db.utcnow(),error,latency,node_id,node_id,n['share_link']));conn.commit()
+            for attempt in range(2):
+                try:
+                    result=probe_link(n['share_link']);state='ok';error='';latency=result['latency_ms']
+                except Exception as e:state='failed';error=(type(e).__name__+': '+str(e))[:300];latency=None
+                with LOCK:
+                    confirm=changes.needs_confirmation(node_id,n['share_link']) or bool(db.get_conn().execute("SELECT 1 FROM core_rollouts WHERE node_id=? AND revision=? AND state IN ('verifying','verifying_rollback')",(node_id,revision)).fetchone())
+                if state=='ok' or not confirm or attempt==1:break
+                if STOP.wait(2):return
+            with LOCK:
+                conn=db.get_conn()
+                applied=conn.execute('UPDATE node_agents SET probe_status=?,probe_at=?,probe_error=?,latency_ms=? WHERE node_id=? AND applied_revision=? AND EXISTS (SELECT 1 FROM nodes WHERE id=? AND share_link=? AND status!=\'uninstalling\')',(state,db.utcnow(),error,latency,node_id,revision,node_id,n['share_link'])).rowcount
+                if applied:
+                    events.observe(node_id,'probe',state,'实际协议转发验证通过' if state=='ok' else '实际协议转发验证失败：检查连接地址、端口映射及隧道入口','info' if state=='ok' else 'warning')
+                    conn.commit()
+                    again=changes.probe_result(node_id,n['share_link'],state=='ok')
+                    from . import monitor
+                    monitor.core_probe_result(node_id,revision,state=='ok')
+                else:
+                    conn.commit()
+                    change=changes.row(node_id)
+                    again=bool(change and change['state'] in ('verifying','verifying_rollback'))
         finally:
             with PROBE_LOCK:PROBING.discard(node_id)
+            if again:schedule_probe(node_id)
+            if getattr(db._local,'conn',None):
+                db._local.conn.close();db._local.conn=None
     threading.Thread(target=run,daemon=True).start();return True
 
 
@@ -414,10 +492,18 @@ def start_loop():
         while not STOP.wait(30):
             try:
                 for a in db.get_conn().execute('SELECT * FROM node_agents WHERE bound=1').fetchall():
-                    if age(a['last_report_at'])<180 and (age(a['probe_at'])>=300 or a['probe_status']=='pending'):
+                    if age(a['probe_at'])>=300 or a['probe_status']=='pending':
                         schedule_probe(a['node_id'])
             except Exception:pass
             try:regions.refresh_pending()
+            except Exception:pass
+            try:
+                from . import sources
+                sources.tick()
+            except Exception:pass
+            try:events.tick()
+            except Exception:pass
+            try:quotas.tick()
             except Exception:pass
             try:telemetry.tick()
             except Exception:pass
@@ -428,11 +514,17 @@ def register(app,require_login,public_url):
     global PUBLIC_URL
     PUBLIC_URL=public_url
     telemetry.register(app,require_login)
+    events.register(app,require_login)
+    quotas.register(app,require_login)
     def owner(request):
         require_login(request)
         if request.headers.get('origin') and urlparse(request.headers['origin']).netloc!=request.headers.get('host'):
             raise HTTPException(403,'请求来源不匹配')
     regions.register(app,owner)
+    labels.register(app,owner)
+    resources.register(app,owner)
+    from . import monitor
+    monitor.register(app,owner,public_url)
     @app.post('/api/agent-nodes')
     def create(body:CreateBody,request:Request):
         owner(request)
@@ -448,19 +540,24 @@ def register(app,require_login,public_url):
                     cfg=cloudflare.settings()
                     if body.fixed_hostname:fixed_host=cloudflare.valid_hostname(body.fixed_hostname)
                 except cloudflare.CFError as exc:raise HTTPException(400,str(exc))
-            n=db.create_node(body.remark,body.node_port,'',body.client_address,secrets.token_urlsafe(24));config={'node_port':body.node_port,'ws_path':body.ws_path or '/'+secrets.token_hex(12),'uuid':body.uuid or str(uuid4())}
+            if body.install_monitor:monitor.require_available()
+            n=db.create_node(body.remark,body.node_port,'',body.client_address,secrets.token_urlsafe(24));config={'node_port':body.node_port,'ws_path':body.ws_path or '/'+secrets.token_hex(12),'uuid':body.uuid or str(uuid4()),'core_channel':body.core_channel}
             if body.protocol in direct_nodes.KINDS:config.update(protocol=body.protocol,server_name=body.server_name,ws_path='/')
             if body.protocol=='vless-ws-argo' and body.tunnel_mode=='fixed':config.update(tunnel_mode='fixed',fixed_hostname=fixed_host or f"node-{n['id']}.{cfg['zone_name']}")
             c=db.get_conn();c.execute('INSERT INTO deployments VALUES (?,?,?,?,?,?)',(n['id'],'',22,body.client_port,config['ws_path'],''));c.commit()
             db.update_node(n['id'],uuid=config['uuid'])
             ensure_node(n['id']);c.execute('UPDATE node_agents SET desired_json=? WHERE node_id=?',(json.dumps(config),n['id']));c.execute('UPDATE agent_jobs SET config_json=? WHERE node_id=? AND revision=1',(json.dumps(config),n['id']));c.commit()
-            db.add_log(n['id'],'安装命令已生成，请在目标服务器以 root 执行')
-            return enrollment(n['id'])
+            c.execute('UPDATE node_agents SET health_mode=?,management_enabled=?,core_channel=? WHERE node_id=?',('none',int(body.management_enabled),body.core_channel,n['id']));c.commit()
+            db.add_log(n['id'],'协议安装命令已生成，请在目标服务器以 root 执行')
+            result=enrollment(n['id'])
+            if body.install_monitor:result['monitor_command']=monitor.enrollment_for_node(n['id'])['command']
+            return result
     @app.post('/api/agent-nodes/{node_id}/fixed')
     def migrate_fixed(node_id:int,body:FixedBody,request:Request):
         owner(request)
         with LOCK:
             a=ensure_node(node_id);n=db.get_node(node_id)
+            changes.guard(node_id)
             if json.loads(a['desired_json']).get('protocol','vless-ws-argo')!='vless-ws-argo':raise HTTPException(400,'仅 Argo 节点支持固定隧道')
             if not a['bound'] or not n['share_link']:raise HTTPException(409,'请先完成节点部署并接入监控')
             if n['status']=='uninstalling' or age(a['last_report_at'])>180:raise HTTPException(409,'节点正在卸载或未在线上报')
@@ -486,6 +583,7 @@ def register(app,require_login,public_url):
         owner(request)
         with LOCK:
             a=ensure_node(node_id)
+            changes.guard(node_id)
             if not a['bound'] or db.get_node(node_id)['status']=='uninstalling':raise HTTPException(409,'节点未绑定或正在卸载')
             if db.get_conn().execute("SELECT 1 FROM agent_jobs WHERE node_id=? AND status IN ('queued','running')",(node_id,)).fetchone():raise HTTPException(409,'已有任务等待执行')
             config=json.loads(a['desired_json']);config['node_port']=a['actual_port']
@@ -495,6 +593,7 @@ def register(app,require_login,public_url):
         owner(request)
         with LOCK:
             a=ensure_node(node_id)
+            changes.guard(node_id)
             if db.get_node(node_id)['status']=='uninstalling':raise HTTPException(409,'节点正在等待卸载')
             if db.get_conn().execute("SELECT 1 FROM agent_jobs WHERE node_id=? AND status IN ('queued','running')",(node_id,)).fetchone():raise HTTPException(409,'已有任务等待执行')
             config=json.loads(a['desired_json'])
@@ -508,9 +607,16 @@ def register(app,require_login,public_url):
             a=ensure_node(node_id)
             if db.get_node(node_id)['status']=='uninstalling':raise HTTPException(409,'节点正在等待卸载')
             if db.get_conn().execute("SELECT 1 FROM agent_jobs WHERE node_id=? AND status IN ('queued','running')",(node_id,)).fetchone():raise HTTPException(409,'已有任务等待执行')
-            config=json.loads(a['desired_json']);n=db.get_node(node_id)
+            baseline=changes.prepare_retry(node_id)
+            changes.guard(node_id)
+            config=changes.retry_config(node_id) or json.loads(a['desired_json']);n=db.get_node(node_id)
+            changes.begin(node_id)
+            if baseline:
+                db.get_conn().execute('UPDATE node_changes SET baseline_ok=1 WHERE node_id=?',(node_id,));db.get_conn().commit()
             operation=('update' if config['node_port']!=a['actual_port'] else 'read') if n['share_link'] else 'install'
-            return {'ok':True,'revision':enqueue(node_id,operation,config),'agent_bound':bool(a['bound'])}
+            revision=enqueue(node_id,operation,config)
+            changes.track(node_id)
+            return {'ok':True,'revision':revision,'agent_bound':bool(a['bound'])}
     @app.post('/api/agent-nodes/{node_id}/probe')
     def probe_now(node_id:int,request:Request):
         owner(request)
@@ -521,10 +627,10 @@ def register(app,require_login,public_url):
         a=db.get_conn().execute('SELECT * FROM node_agents WHERE enrollment_hash=? AND enrollment_until>?',(digest(token),int(time.time()))).fetchone()
         if not a:raise HTTPException(410,'安装命令已使用或已过期，请在面板重新生成')
         from .agent_scripts import bootstrap_script
-        return PlainTextResponse(bootstrap_script(public_url(),token,a['node_id']),media_type='text/x-shellscript')
+        return PlainTextResponse(bootstrap_script(public_url(),token,a['node_id'],dict(a)),media_type='text/x-shellscript')
     @app.get('/agent/assets/{name}')
     def asset(name:str):
-        files={'agent.sh':'node-agent.sh','repair.sh':'node-repair.sh','fixed.sh':'node-fixed.sh','traffic.sh':'node-traffic.sh'}
+        files={'agent.sh':'node-agent.sh','repair.sh':'node-repair.sh','fixed.sh':'node-fixed.sh','traffic.sh':'node-traffic.sh','resources.sh':'node-resources.sh','diagnose.sh':'node-diagnose.sh','core.sh':'node-core.sh','monitor-publish.sh':'node-monitor-publish.sh','monitor-uninstall.sh':'node-monitor-uninstall.sh'}
         if name=='library.sh':text=deploy.installer_text().rsplit('\nmain',1)[0]+'\n'
         elif name in files:text=(ROOT/files[name]).read_text()
         else:raise HTTPException(404,'资源不存在')
@@ -540,7 +646,7 @@ def register(app,require_login,public_url):
             except ValueError:
                 if not n['host_ip']:fields['host_ip']=body.hostname
             db.update_node(n['id'],**fields);db.add_log(n['id'],'节点已通过一次性安装凭据绑定，开始主动上报')
-            return {'node_id':n['id'],'agent_token':token,'port':a['actual_port'],'applied_revision':a['applied_revision'],'protocol':json.loads(a['desired_json']).get('protocol','vless-ws-argo')}
+            return {'node_id':n['id'],'agent_token':token,'port':a['actual_port'],'applied_revision':a['applied_revision'],'protocol':json.loads(a['desired_json']).get('protocol','vless-ws-argo'),'core_channel':a['core_channel'],'management_enabled':bool(a['management_enabled']),'health_mode':a['health_mode']}
     @app.post('/agent/uninstalled/{revision}')
     def uninstalled(revision:int,x_agent_token:str|None=Header(default=None)):
         with LOCK:
@@ -564,7 +670,7 @@ def register(app,require_login,public_url):
     def work(x_agent_token:str|None=Header(default=None)):
         a=authorize(x_agent_token)
         job=db.get_conn().execute("SELECT revision,operation,config_json FROM agent_jobs WHERE node_id=? AND status IN ('queued','running') AND revision>? ORDER BY revision LIMIT 1",(a['node_id'],a['applied_revision'])).fetchone()
-        return {'job':dict(job) if job else None}
+        return {'job':dict(job) if job else None,'health_mode':a['health_mode'],'health':{'probe_failed':a['probe_status']=='failed' and age(a['probe_at'])<600,'failure_count':a['failure_count'],'health_status':a['health_status'],'process_alive':bool(a['process_alive']),'local_ws':bool(a['local_ws'])}}
     @app.get('/agent/job/{revision}.sh')
     def get_job(revision:int,x_agent_token:str|None=Header(default=None)):
         a=authorize(x_agent_token);job=db.get_conn().execute("SELECT * FROM agent_jobs WHERE node_id=? AND revision=? AND status IN ('queued','running')",(a['node_id'],revision)).fetchone()

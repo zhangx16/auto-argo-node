@@ -14,16 +14,24 @@ BASE=/usr/local/lib/argo-deploy
 PANEL=$(jq -r '.panel' "$DIR/settings.json")
 TMP=$(mktemp -d "$DIR/upgrade.XXXXXXXX")
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
-for name in agent.sh repair.sh library.sh fixed.sh traffic.sh; do
+for name in agent.sh repair.sh library.sh fixed.sh traffic.sh resources.sh diagnose.sh core.sh monitor-publish.sh; do
  curl --config "$DIR/curl.conf" -fsS "$PANEL/agent/assets/$name" -o "$TMP/$name"
  chmod 700 "$TMP/$name"
 done
 sh -n "$TMP/agent.sh"
 sh -n "$TMP/traffic.sh"
+sh -n "$TMP/resources.sh"
+sh -n "$TMP/diagnose.sh"
 bash -n "$TMP/repair.sh"
 bash -n "$TMP/library.sh"
 bash -n "$TMP/fixed.sh"
-for name in repair.sh library.sh fixed.sh traffic.sh agent.sh; do mv "$TMP/$name" "$BASE/$name"; done
+# Keep one pre-migration management implementation for local recovery.
+BACKUP=/usr/local/etc/argo-deploy/management-rollback
+if [ ! -d "$BACKUP" ];then
+ mkdir -p "$BACKUP";chmod 700 "$BACKUP"
+ for name in agent.sh repair.sh library.sh fixed.sh traffic.sh resources.sh diagnose.sh;do [ ! -f "$BASE/$name" ] || cp -p "$BASE/$name" "$BACKUP/$name";done
+fi
+for name in repair.sh library.sh fixed.sh traffic.sh resources.sh diagnose.sh core.sh monitor-publish.sh agent.sh; do mv "$TMP/$name" "$BASE/$name"; done
 # Installing nft is optional; never changes existing firewall services.
 if ! command -v nft >/dev/null 2>&1;then
  if command -v apk >/dev/null;then apk add --no-cache nftables || true;else apt-get install -y --no-install-recommends nftables || true;fi

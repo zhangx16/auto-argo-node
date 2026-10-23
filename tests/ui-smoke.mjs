@@ -5,8 +5,9 @@ import os from 'node:os';
 import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
 const root=path.resolve(import.meta.dirname,'../app/static');
-const jobs=[],subscriptions=[],externalNodes=[];let submitted=null;
+const jobs=[],subscriptions=[],externalNodes=[];let submitted=null,mediaActive=null,sourceSubmitted=null,mediaSubmitted=null;const mediaHistory=[],sourceRows=[];let quotaRule={limit_bytes:107374182400,reset_day:15,warning_percent:80,count_mode:'both',used_bytes:10737418240,remaining_bytes:96636764160,percent:10,cycle_start:'2026-10-15',cycle_end:'2026-11-15',measured_days:8};
 function updateFixtureSub(s){
+ s.page_url='http://127.0.0.1:18909/subscription/'+s.id+'/fixture';
  s.usage={upload:1024,download:2048,used:3072,total:s.traffic_limit_bytes||0,managed_count:1,measured_count:1,external_count:(s.external_node_ids||[]).length,stale_count:0,since:'2026-10-22'};
  s.chains=s.chains||[];s.chain_only=!!s.chain_only;s.chain_count=s.chains.length;s.chain_errors=[];
  s.node_count=s.node_ids.length+(s.external_node_ids||[]).length;s.exportable_count=s.chains.length+(s.chain_only?0:s.node_count);
@@ -17,8 +18,31 @@ function updateFixtureSub(s){
 }
 const server=http.createServer(async(req,res)=>{
  res.setHeader('Content-Security-Policy',"default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'");
+ if(req.url.startsWith('/subscription/1/fixture')){
+  if(req.url.endsWith('/data')){res.setHeader('Content-Type','application/json');return res.end(JSON.stringify({name:'UI Portal',formats:['base64','raw','clash','singbox'],urls:{base64:'http://example.com/sub?format=base64',raw:'http://example.com/sub?format=raw',clash:'http://example.com/sub?format=clash',singbox:'http://example.com/sub?format=singbox'},usage:{used:3072,total:1073741824,upload:1024,download:2048,managed_count:1,measured_count:1,external_count:0,stale_count:0},expires_at:'',exportable_count:1,chain_errors:[],nodes:[{name:'🇺🇸 Portal node',protocol:'vless',group_name:'家宽',tags:['备用'],kind:'managed'}]}));}
+  res.setHeader('Content-Type','text/html');return res.end(fs.readFileSync(path.join(root,'subscription.html')));
+ }
  if(req.url.startsWith('/api/')){
   res.setHeader('Content-Type','application/json');
+  if(/^\/api\/nodes\/\d+\/events/.test(req.url))return res.end(JSON.stringify({events:[{id:1,created_at:'2026-10-23T00:00:00Z',kind:'health',level:'warning',message:'节点心跳停止：超过 180 秒未收到心跳'},{id:2,created_at:'2026-10-23T01:00:00Z',kind:'change',level:'info',message:'已恢复修改前配置并通过验证'}]}));
+  if(/^\/api\/traffic\/nodes\/\d+\/quota$/.test(req.url)){
+   if(req.method==='PUT'){let raw='';for await(const chunk of req)raw+=chunk;Object.assign(quotaRule,JSON.parse(raw));}
+   return res.end(JSON.stringify(quotaRule));
+  }
+  if(req.url==='/api/resources')return res.end(JSON.stringify({nodes:[{node_id:1,name:'Resource QA',bound:true,agent_version:4,stale:false,diagnostic_command:'sh /usr/local/lib/argo-deploy/diagnose.sh 1',sample:{received_at:Math.floor(Date.now()/1000),cpu_percent:12.5,cpu_cores:2,load1:.5,memory_total:1073741824,memory_used:536870912,swap_total:0,swap_used:0,disk_total:2147483648,disk_used:1073741824,uptime_seconds:86400,singbox_rss:12582912,cloudflared_rss:25165824,singbox_processes:1,cloudflared_processes:1}}]}));
+  if(req.url==='/api/resources/1/history')return res.end(JSON.stringify({samples:[{received_at:Math.floor(Date.now()/1000),cpu_percent:12.5,memory_total:1024,memory_used:512}]}));
+  if(req.url==='/api/labels')return res.end(JSON.stringify({groups:[...new Set(jobs.map(n=>n.group_name).filter(Boolean))],tags:[...new Set(jobs.flatMap(n=>n.tags||[]))]}));
+  if(req.url.startsWith('/api/labels/')&&req.method==='PUT'){let raw='';for await(const chunk of req)raw+=chunk;const d=JSON.parse(raw);Object.assign(jobs[0],d);return res.end(JSON.stringify(d));}
+  if(req.url.startsWith('/api/media/')){
+   if(req.method==='POST'){let raw='';for await(const chunk of req)raw+=chunk;mediaSubmitted=JSON.parse(raw);mediaActive={id:1,kind:'managed',node_id:1,status:'running',current:'netflix',results:[{platform:'netflix',name:'Netflix',status:'available',region:'US',detail:'抽样版权页面可用；未验证播放'}],created_at:'2026-10-23T00:00:00Z'};return res.end(JSON.stringify(mediaActive));}
+   if(req.method==='DELETE'){mediaHistory.push({...mediaActive,status:'cancelled'});mediaActive=null;return res.end('{}');}
+   return res.end(JSON.stringify({active:mediaActive,history:mediaHistory}));
+  }
+  if(req.url==='/api/external-sources'){
+   if(req.method==='POST'){let raw='';for await(const chunk of req)raw+=chunk;sourceSubmitted=JSON.parse(raw);sourceRows.push({id:1,name:sourceSubmitted.name,enabled:true,interval_minutes:sourceSubmitted.interval_minutes,subscription_ids:sourceSubmitted.subscription_ids,running:false,node_count:1,stats:{added:1},last_checked:'2026-10-23',last_success:'2026-10-23'});return res.end(JSON.stringify(sourceRows[0]));}
+   return res.end(JSON.stringify(sourceRows));
+  }
+  if(req.url.startsWith('/api/external-sources/'))return res.end(JSON.stringify({scheduled:true}));
   if(req.url==='/api/regions')return res.end(JSON.stringify({countries:{HK:'Hong Kong',US:'United States',JP:'Japan',ZZ:'未知地区'},release:'2026-10'}));
   if(req.url.startsWith('/api/regions/managed/')&&req.method==='PUT'){let body='';for await(const chunk of req)body+=chunk;const data=JSON.parse(body);Object.assign(jobs[0],{country_code:data.country_code||'JP',country_source:data.country_code?'manual':'auto',country_flag:data.country_code==='US'?'🇺🇸':'🇯🇵'});jobs[0].display_name=jobs[0].country_flag+' '+jobs[0].remark;return res.end(JSON.stringify(jobs[0]));}
   if(req.url==='/api/notifications')return res.end(JSON.stringify({configured:true,bot_username:'fixture_bot',chat_id:'123',enabled:true,offline_seconds:180,summary_hours:24,summary_enabled:true,queued:0}));
@@ -90,6 +114,7 @@ try{
  await send('Page.navigate',{url:'http://127.0.0.1:18909/'});
  for(let i=0;i<40;i++){if(await evaluate('!!document.querySelector("#tasks .empty")'))break;await new Promise(r=>setTimeout(r,100));}
  assert.equal(await evaluate('document.querySelector("h1").textContent'),'节点概览');
+ assert.equal(await evaluate(`['node','task','subscription','resources','traffic'].every(id=>{const module=document.getElementById(id+'-module');return module.tagName==='DIV'&&!module.querySelector(':scope > summary')&&module.getClientRects().length>0;})`),true,'main modules are always expanded');
  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true);
  assert.equal(await evaluate('document.querySelector("#password")===null'),true,'command installation never asks for SSH secrets');
  await evaluate(`document.querySelector('#remark').value='QA node';document.querySelector('#deploy-form').requestSubmit()`);
@@ -127,7 +152,7 @@ try{
  assert.equal(jobs[0].probe_status,'pending');jobs[0].probe_status='ok';
  await evaluate('document.querySelector("#refresh").click()');await new Promise(r=>setTimeout(r,250));
 
- await evaluate('document.querySelector("#subscription-module").open=true;document.querySelector("#new-subscription").click()');
+ await evaluate('document.querySelector("#new-subscription").click()');
  assert.equal(await evaluate('document.querySelector("#subscription-editor").open'),true);
  assert.equal(await evaluate('document.querySelectorAll("#sub-node-picker input").length'),1);
  await evaluate('document.querySelector("#sub-name").value="Selected nodes";document.querySelector("#sub-traffic-limit").value="1.5";document.querySelector("#sub-node-picker input").click();document.querySelector("#subscription-form").requestSubmit()');
@@ -193,7 +218,7 @@ try{
  assert.equal(await evaluate('document.querySelector("#fixed-hostname-field").hidden'),false);
  assert.equal(await evaluate('document.querySelector("#fixed-domain-hint").textContent.includes("example.com")'),true);
  const dest=path.resolve(import.meta.dirname,'../artifacts');fs.mkdirSync(dest,{recursive:true});
- await evaluate('document.querySelector("#node-module").open=true;window.scrollTo({top:0,behavior:"instant"})');
+ await evaluate('window.scrollTo({top:0,behavior:"instant"})');
  let shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});fs.writeFileSync(dest+'/desktop.png',Buffer.from(shot.data,'base64'));
  await send('Emulation.setDeviceMetricsOverride',{width:390,height:844,deviceScaleFactor:1,mobile:true});
  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true);
@@ -235,7 +260,7 @@ try{
   await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
  }
  const waitFor=async expr=>{for(let i=0;i<50;i++){if(await evaluate(expr))return;await new Promise(r=>setTimeout(r,100));}throw Error('Timed out: '+expr);};
- await evaluate(`document.getElementById('traffic-module').open=true;document.getElementById('traffic-refresh').click()`);
+ await evaluate(`document.getElementById('traffic-refresh').click()`);
  await waitFor(`document.getElementById('traffic-totals').textContent.includes('KiB')`);
  assert.equal(await evaluate('document.querySelectorAll("#traffic-chart svg rect").length'),14);
  await evaluate(`document.getElementById('traffic-days').value='30';document.getElementById('traffic-days').dispatchEvent(new Event('change'))`);
@@ -268,6 +293,49 @@ try{
  assert.equal(await evaluate(`document.getElementById('traffic-chart-tooltip').textContent.includes('合计')`),true);
  await send('Input.dispatchMouseEvent',{type:'mouseMoved',x:10,y:10});
  await waitFor(`document.getElementById('traffic-chart-tooltip').hidden`);
+ await evaluate(`document.querySelector('[data-events]').click()`);
+ await waitFor(`document.getElementById('events-list').textContent.includes('心跳停止')`);
+ assert.equal(await evaluate(`document.getElementById('events-list').textContent.includes('恢复修改前配置')`),true);
+ await evaluate(`document.getElementById('events-close').click();document.querySelector('[data-quota]').click()`);
+ await waitFor(`!document.getElementById('quota-save').disabled`);
+ assert.equal(await evaluate(`document.getElementById('quota-limit').value`),'100');
+ await send('Emulation.setDeviceMetricsOverride',{width:375,height:844,deviceScaleFactor:1,mobile:true});
+ await new Promise(r=>setTimeout(r,200));
+ assert.equal(await evaluate(`document.getElementById('quota-dialog').scrollWidth<=document.getElementById('quota-dialog').clientWidth&&document.documentElement.scrollWidth<=innerWidth`),true);
+ const quotaShot=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(dest+'/quota-mobile.png',Buffer.from(quotaShot.data,'base64'));
+ await evaluate(`document.getElementById('quota-limit').value='200';document.getElementById('quota-reset').value='31';document.getElementById('quota-form').requestSubmit()`);
+ await waitFor(`!document.getElementById('quota-dialog').open`);
+ assert.equal(quotaRule.limit_bytes,214748364800);assert.equal(quotaRule.reset_day,31);
+ await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
+ await evaluate(`document.querySelector('[data-label-kind="managed"]').click()`);
+ await waitFor(`!document.getElementById('labels-save').disabled`);
+ await evaluate(`document.getElementById('labels-group').value='家宽';document.getElementById('labels-tags').value='备用,流媒体';document.getElementById('labels-form').requestSubmit()`);
+ await waitFor(`!document.getElementById('labels-dialog').open&&document.querySelector('#deployed-nodes .node-tags').textContent.includes('家宽')`);
+ await evaluate(`document.getElementById('node-search').value='no-matching-node';document.getElementById('node-search').dispatchEvent(new Event('input'))`);
+ await waitFor(`!!document.querySelector('#deployed-nodes .empty')`);
+ assert.equal(await evaluate(`document.getElementById('stat-deployed').textContent`),'1');
+ await evaluate(`document.getElementById('node-search').value='';document.getElementById('node-search').dispatchEvent(new Event('input'))`);
+ await waitFor(`!!document.querySelector('[data-media-kind="managed"]')`);
+ await evaluate(`document.querySelector('[data-media-kind="managed"]').click()`);
+ await waitFor(`!document.getElementById('media-start').disabled`);
+ await evaluate(`document.getElementById('media-select-all').click()`);
+ assert.equal(await evaluate(`document.querySelectorAll('#media-form input:checked').length`),12);
+ await evaluate(`document.getElementById('media-form').requestSubmit()`);
+ await waitFor(`document.getElementById('media-results').textContent.includes('可用信号')`);
+ assert.equal(mediaSubmitted.platforms.length,12);
+ await send('Emulation.setDeviceMetricsOverride',{width:375,height:844,deviceScaleFactor:1,mobile:true});
+ await new Promise(r=>setTimeout(r,200));
+ assert.equal(await evaluate(`document.getElementById('media-dialog').scrollWidth<=document.getElementById('media-dialog').clientWidth`),true);
+ const mediaShot=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(dest+'/media-mobile.png',Buffer.from(mediaShot.data,'base64'));
+ await evaluate(`document.getElementById('media-cancel').click()`);
+ await waitFor(`document.getElementById('media-status').textContent.includes('已取消')`);
+ await evaluate(`document.getElementById('media-close').click();document.getElementById('new-source').click()`);
+ await waitFor(`!document.getElementById('source-save').disabled`);
+ await evaluate(`document.getElementById('source-name').value='Provider fixture';document.getElementById('source-url').value='https://example.com/private?token=fixture';document.getElementById('source-form').requestSubmit()`);
+ await waitFor(`!document.getElementById('source-dialog').open&&document.getElementById('source-list').textContent.includes('Provider fixture')`);
+ assert.equal(sourceSubmitted.interval_minutes,360);assert.equal(sourceSubmitted.subscription_ids.length,0);
+ assert.equal(JSON.stringify(sourceRows).includes('token=fixture'),false);
+ await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1100,deviceScaleFactor:1,mobile:false});
  await evaluate(`document.querySelector('[data-region-kind="managed"]').click()`);
  await waitFor(`document.getElementById('region-dialog').open`);
  await evaluate(`document.getElementById('region-country').value='US';document.getElementById('region-form').requestSubmit()`);
@@ -285,7 +353,7 @@ try{
  assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'),true);
  const telemetryShot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});fs.writeFileSync(dest+'/telemetry-mobile.png',Buffer.from(telemetryShot.data,'base64'));
  await send('Emulation.setDeviceMetricsOverride',{width:1440,height:1000,deviceScaleFactor:1,mobile:false});
- await evaluate(`document.getElementById('traffic-module').open=false;document.getElementById('node-module').open=false;document.getElementById('subscription-module').open=false;window.scrollTo({top:0,behavior:"instant"})`);
+ await evaluate(`window.scrollTo({top:0,behavior:"instant"})`);
  assert.equal(await evaluate('document.getElementById("stat-deployed").textContent'),'1');
  await evaluate(`document.getElementById('nav-toggle').click()`);
  assert.equal(await evaluate('document.body.classList.contains("sidebar-collapsed")'),true);
@@ -295,9 +363,10 @@ try{
  assert.equal(await evaluate('document.body.classList.contains("mobile-nav-open")'),true);
  assert.equal(await evaluate('document.getElementById("app-sidebar").contains(document.activeElement)'),true);
  await evaluate(`document.querySelector('.nav-link[href="#subscription-module"]').click()`);
- assert.equal(await evaluate('document.getElementById("subscription-module").open'),true);
+ assert.equal(await evaluate('document.getElementById("subscription-module").tagName'),"DIV");
+ assert.equal(await evaluate('document.activeElement.id'),"subscription-module-title");
  assert.equal(await evaluate('document.body.classList.contains("mobile-nav-open")'),false);
- await evaluate(`document.getElementById('subscription-module').open=false;window.scrollTo({top:0,behavior:"instant"})`);
+ await evaluate(`window.scrollTo({top:0,behavior:"instant"})`);
  for(const width of[375,479,480,767,768,1199,1200,1440]){
   await send('Emulation.setDeviceMetricsOverride',{width,height:1000,deviceScaleFactor:1,mobile:width<768});
   await new Promise(r=>setTimeout(r,180));
@@ -307,5 +376,22 @@ try{
   if([375,768,1440].includes(width)){const shot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});fs.writeFileSync(dest+'/redesign-'+width+'.png',Buffer.from(shot.data,'base64'));}
  }
  fs.writeFileSync(dest+'/redesign-dom.html',await evaluate('document.documentElement.outerHTML'));
+ await send('Page.navigate',{url:'http://127.0.0.1:18909/subscription/1/fixture'});
+ await waitFor(`document.getElementById('portal-name')?.textContent==='UI Portal'`);
+ await evaluate(`document.getElementById('portal-format').value='singbox';document.getElementById('portal-format').dispatchEvent(new Event('change'))`);
+ assert.equal(await evaluate(`document.getElementById('portal-import').getAttribute('href').startsWith('sing-box://')`),true);
+ await send('Emulation.setDeviceMetricsOverride',{width:375,height:844,deviceScaleFactor:1,mobile:true});await new Promise(r=>setTimeout(r,200));
+ assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true);
+ const portalShot=await send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true});fs.writeFileSync(dest+'/subscription-portal-mobile.png',Buffer.from(portalShot.data,'base64'));
+ await send('Page.navigate',{url:'http://127.0.0.1:18909/'});
+ await waitFor(`document.querySelector('#resources-list details')`);
+ await evaluate(`document.querySelector('#resources-list details').open=true;document.getElementById('resources-module').scrollIntoView()`);
+ assert.equal(await evaluate(`document.getElementById('resources-list').textContent.includes('12.5%')&&document.getElementById('resources-list').textContent.includes('diagnose.sh 1')`),true);
+ await evaluate(`document.querySelector('[data-resource-history]').click()`);
+ await waitFor(`document.querySelectorAll('.resource-chart').length===2`);
+ assert.equal(await evaluate(`document.documentElement.scrollWidth<=innerWidth`),true,'resource mobile layout');
+ const resourceShot=await send('Page.captureScreenshot',{format:'png'});fs.writeFileSync(dest+'/resources-mobile.png',Buffer.from(resourceShot.data,'base64'));
+ await evaluate(`document.querySelector('[data-resource-upgrade]').click()`);
+ await waitFor(`document.querySelector('[data-resource-upgrade]').textContent.includes('已排队')`);
  assert.deepEqual(errors,[]);console.log('UI smoke passed: command enrollment, no SSH secrets, node health, edit/queue settings, probe, logs, deletion, desktop/mobile layout.');
 }finally{ws?.close();child.kill();await new Promise(r=>child.once('exit',r));server.close();fs.rmSync(profile,{recursive:true,force:true,maxRetries:10,retryDelay:100});}

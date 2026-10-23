@@ -1,0 +1,171 @@
+{
+  "environment": {
+    "mode": "transfer",
+    "idle_seconds": 0,
+    "architecture": "x86_64",
+    "gomaxprocs": 1,
+    "gogc": "default",
+    "gomemlimit": "unset",
+    "connections": 8,
+    "scope": "loopback HTTPS and UDP; no cloudflared"
+  },
+  "binaries": {
+    "keel": {
+      "bytes": 9425022,
+      "sha256": "ff4453c6fcac55630ac6c7bb8a6140880ebe0b35656a616aaac0ffcf1a6dae66",
+      "version": "Keel Reality-only reference; binary identified by SHA256"
+    }
+  },
+  "runs": [
+    {
+      "protocol": "reality",
+      "variant": "keel",
+      "repeat": 1,
+      "cold_idle": {
+        "rss_kib": 8700,
+        "pss_kib": 8696,
+        "private_clean_kib": 7580,
+        "private_dirty_kib": 1116,
+        "swap_kib": 0,
+        "cpu_seconds": 0.0
+      },
+      "idle": {
+        "rss_kib": 9720,
+        "pss_kib": 9716,
+        "private_clean_kib": 8280,
+        "private_dirty_kib": 1436,
+        "swap_kib": 0,
+        "cpu_seconds": 0.01
+      },
+      "active_median": {
+        "rss_kib": 12072.0,
+        "pss_kib": 12068.0
+      },
+      "active_peak": {
+        "rss_kib": 12372,
+        "pss_kib": 12368
+      },
+      "released_15s": {
+        "rss_kib": 12428,
+        "pss_kib": 12424,
+        "private_clean_kib": 8272,
+        "private_dirty_kib": 4152,
+        "swap_kib": 0,
+        "cpu_seconds": 0.42
+      },
+      "client_closed_5s": {
+        "rss_kib": 12440,
+        "pss_kib": 12436,
+        "private_clean_kib": 8272,
+        "private_dirty_kib": 4164,
+        "swap_kib": 0,
+        "cpu_seconds": 0.43
+      },
+      "cpu_seconds": 0.41,
+      "transfer_seconds": 9.311,
+      "verified_bytes": 134217728,
+      "udp_ok": true,
+      "bypass_check": true
+    },
+    {
+      "protocol": "reality",
+      "variant": "keel",
+      "repeat": 2,
+      "cold_idle": {
+        "rss_kib": 8728,
+        "pss_kib": 8724,
+        "private_clean_kib": 7580,
+        "private_dirty_kib": 1144,
+        "swap_kib": 0,
+        "cpu_seconds": 0.0
+      },
+      "idle": {
+        "rss_kib": 9760,
+        "pss_kib": 9756,
+        "private_clean_kib": 8284,
+        "private_dirty_kib": 1472,
+        "swap_kib": 0,
+        "cpu_seconds": 0.0
+      },
+      "active_median": {
+        "rss_kib": 12044.0,
+        "pss_kib": 12040.0
+      },
+      "active_peak": {
+        "rss_kib": 12452,
+        "pss_kib": 12448
+      },
+      "released_15s": {
+        "rss_kib": 12512,
+        "pss_kib": 12508,
+        "private_clean_kib": 8276,
+        "private_dirty_kib": 4232,
+        "swap_kib": 0,
+        "cpu_seconds": 0.42
+      },
+      "client_closed_5s": {
+        "rss_kib": 12532,
+        "pss_kib": 12528,
+        "private_clean_kib": 8276,
+        "private_dirty_kib": 4252,
+        "swap_kib": 0,
+        "cpu_seconds": 0.42
+      },
+      "cpu_seconds": 0.41,
+      "transfer_seconds": 9.296,
+      "verified_bytes": 134217728,
+      "udp_ok": true,
+      "bypass_check": true
+    },
+    {
+      "protocol": "reality",
+      "variant": "keel",
+      "repeat": 3,
+      "cold_idle": {
+        "rss_kib": 8580,
+        "pss_kib": 8576,
+        "private_clean_kib": 7452,
+        "private_dirty_kib": 1124,
+        "swap_kib": 0,
+        "cpu_seconds": 0.0
+      },
+      "idle": {
+        "rss_kib": 9672,
+        "pss_kib": 9668,
+        "private_clean_kib": 8220,
+        "private_dirty_kib": 1448,
+        "swap_kib": 0,
+        "cpu_seconds": 0.0
+      },
+      "active_median": {
+        "rss_kib": 11996.0,
+        "pss_kib": 11992.0
+      },
+      "active_peak": {
+        "rss_kib": 12372,
+        "pss_kib": 12368
+      },
+      "released_15s": {
+        "rss_kib": 12380,
+        "pss_kib": 12376,
+        "private_clean_kib": 8212,
+        "private_dirty_kib": 4164,
+        "swap_kib": 0,
+        "cpu_seconds": 0.38
+      },
+      "client_closed_5s": {
+        "rss_kib": 12384,
+        "pss_kib": 12380,
+        "private_clean_kib": 8212,
+        "private_dirty_kib": 4168,
+        "swap_kib": 0,
+        "cpu_seconds": 0.39
+      },
+      "cpu_seconds": 0.38,
+      "transfer_seconds": 9.293,
+      "verified_bytes": 134217728,
+      "udp_ok": true,
+      "bypass_check": true
+    }
+  ]
+}

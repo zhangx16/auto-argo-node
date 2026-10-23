@@ -32,7 +32,7 @@
  document.addEventListener('pointerdown',event=>{if(!chartHost.contains(event.target))hideTooltip();});
  document.addEventListener('keydown',event=>{if(event.key==='Escape')hideTooltip();});
  document.addEventListener('scroll',hideTooltip,true);
- el('traffic-module').addEventListener('toggle',hideTooltip);
+ document.addEventListener('module-navigate',e=>{hideTooltip();if(e.detail?.id==='traffic-module')traffic();});
  function renderChart(){
   hideTooltip();const host=el('traffic-chart');if(!host||!chartHistory)return;
   const points=chartHistory.points||[];const width=Math.max(260,host.clientWidth||600),height=250,left=66,right=12,top=14,bottom=42,w=width-left-right,h=height-top-bottom;
@@ -58,7 +58,7 @@
   const select=el('traffic-chart-node');select.replaceChildren(new Option('全部节点',''));d.nodes.forEach(n=>select.add(new Option(nodeLabel(n),String(n.id))));select.value=d.nodes.some(n=>String(n.id)===node)?node:'';
   chartHistory=d.history||{points:[]};renderChart();
   const opened=new Set([...el('traffic-nodes').querySelectorAll('details[open]')].map(n=>n.dataset.trafficNode));
-  el('traffic-nodes').innerHTML=d.nodes.map(n=>`<details class="chain-card" data-traffic-node="${n.id}" ${opened.has(String(n.id))?'open':''}><summary>${esc(nodeLabel(n))} · 今日 ${bytes(n.today_rx+n.today_tx)} · ${n.available?'采集中':'尚未采集 / 已过期'}</summary><p class="meta">今日 IN ${bytes(n.today_rx)} / OUT ${bytes(n.today_tx)}<br>本月 IN ${bytes(n.month_rx)} / OUT ${bytes(n.month_tx)}<br>累计 IN ${bytes(n.rx)} / OUT ${bytes(n.tx)}<br>最后采集 ${n.sampled_at?esc(new Date(n.sampled_at*1000).toLocaleString()):'尚未采集'}</p>${n.agent_version&&n.agent_version<4?`<button class="ghost" type="button" data-upgrade="${n.id}">更新轻量监控脚本</button>`:''}</details>`).join('')||'<p class="empty">暂无节点</p>';
+  el('traffic-nodes').innerHTML=d.nodes.map(n=>`<details class="chain-card" data-traffic-node="${n.id}" ${opened.has(String(n.id))?'open':''}><summary>${esc(nodeLabel(n))} · 今日 ${bytes(n.today_rx+n.today_tx)} · ${n.available?'采集中':'尚未采集 / 已过期'}</summary><p class="meta">今日 IN ${bytes(n.today_rx)} / OUT ${bytes(n.today_tx)}<br>本月 IN ${bytes(n.month_rx)} / OUT ${bytes(n.month_tx)}<br>累计 IN ${bytes(n.rx)} / OUT ${bytes(n.tx)}<br>最后采集 ${n.sampled_at?esc(new Date(n.sampled_at*1000).toLocaleString()):'尚未采集'}</p>${n.quota?.limit_bytes?`<div class="subscription-usage"><div class="usage-heading"><strong>${bytes(n.quota.used_bytes)} / ${bytes(n.quota.limit_bytes)}</strong><span>${n.quota.percent}%${n.quota.exceeded?' · 已超额度':''}</span></div><progress max="100" value="${Math.min(100,n.quota.percent)}" aria-label="本周期流量用量"></progress><p class="meta">结算周期（UTC）：${esc(n.quota.cycle_start)} 至 ${esc(n.quota.cycle_end)}（不含） · 剩余 ${bytes(n.quota.remaining_bytes)} · ${n.quota.measured_days} 天有记录 · 只提醒，不停用</p></div>`:''}<button class="ghost" type="button" data-quota="${n.id}" data-node-name="${esc(n.remark)}">设置流量额度</button>${n.agent_version&&n.agent_version<4?`<button class="ghost" type="button" data-upgrade="${n.id}">更新轻量监控脚本</button>`:''}</details>`).join('')||'<p class="empty">暂无节点</p>';
  }catch(e){message(e.message,true);}}
  el('traffic-days').onchange=traffic;el('traffic-chart-node').onchange=traffic;
  const observer=new ResizeObserver(()=>renderChart());observer.observe(el('traffic-chart'));
@@ -71,5 +71,5 @@
  el('traffic-notify').onclick=async()=>{try{await request('/api/traffic/notify','POST');message('汇总已加入通知队列');}catch(e){message(e.message,true);}};
  el('traffic-refresh').onclick=traffic;
  el('traffic-nodes').onclick=async e=>{const b=e.target.closest('[data-upgrade]');if(!b)return;b.disabled=true;try{await request(`/api/agent-nodes/${b.dataset.upgrade}/upgrade`,'POST');message('更新任务已排队；节点下次连接时执行，不更改协议与端口。');}catch(e){message(e.message,true);b.disabled=false;}};
- settings();traffic();setInterval(()=>{if(el('traffic-module').open||document.getElementById('overview')?.getBoundingClientRect().bottom>0)traffic();},30000);
+ settings();traffic();setInterval(()=>{const r=el('traffic-module').getBoundingClientRect();if(!document.hidden&&((r.bottom>0&&r.top<innerHeight)||document.getElementById('overview')?.getBoundingClientRect().bottom>0))traffic();},30000);
 })();

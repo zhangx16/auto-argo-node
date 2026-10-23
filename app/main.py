@@ -500,6 +500,10 @@ cloudflare.register(app, require_login)
 @app.on_event("shutdown")
 def stop_agent_probes():
     agent.STOP.set()
+    from . import sources
+    sources.STOP.set()
+    from . import media_unlock
+    media_unlock.shutdown()
 
 
 from fastapi.exceptions import RequestValidationError

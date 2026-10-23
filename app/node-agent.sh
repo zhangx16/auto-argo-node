@@ -16,7 +16,12 @@ rm -f "$WORK_CONFIG"
 WORK=$(mktemp -d /tmp/argo-tick.XXXXXXXX) || exit 1
 trap 'rm -rf "$WORK"' EXIT HUP INT TERM
 HTTP_CODE=""
-if [ -f "$BASE/traffic.sh" ];then . "$BASE/traffic.sh";traffic_sample;else printf null > "$WORK/traffic.json";fi
+export ARGO_PANEL="$PANEL"
+export ARGO_CORE_CHANNEL=$(jq -r '.core_channel // "legacy"' "$DIR/settings.json")
+HEALTH_MODE=$(jq -r '.health_mode // "legacy"' "$DIR/settings.json")
+MANAGED=$(jq -r 'if has("management_enabled") then .management_enabled else true end' "$DIR/settings.json")
+if [ "$HEALTH_MODE" = legacy ] && [ -f "$BASE/resources.sh" ];then . "$BASE/resources.sh";resource_sample || printf null > "$WORK/resources.json";else printf null > "$WORK/resources.json";fi
+if [ "$HEALTH_MODE" = legacy ] && [ -f "$BASE/traffic.sh" ];then . "$BASE/traffic.sh";traffic_sample;else printf null > "$WORK/traffic.json";fi
 api() {
  method=$1;endpoint=$2;output=$3;input=${4:-}
  if [ -n "$input" ]; then
@@ -53,6 +58,12 @@ if [ -s "$DIR/pending-report.json" ]; then
   rm -f "$DIR/pending-report.json"
  else exit 0; fi
 fi
+# Poll control flags separately from health sampling; no resource credential executes jobs.
+api GET /agent/work "$WORK/control.json" || exit 0
+NEW_MODE=$(jq -r '.health_mode // "legacy"' "$WORK/control.json")
+if [ "$NEW_MODE" != "$HEALTH_MODE" ];then
+ HEALTH_MODE="$NEW_MODE";jq --arg mode "$HEALTH_MODE" '.health_mode=$mode' "$DIR/settings.json" > "$DIR/settings.json.new" && mv "$DIR/settings.json.new" "$DIR/settings.json"
+fi
 load_meta
 PROCESS=false;LOCAL=false;PUBLIC=false;STATE=waiting;ERROR=""
 FAILURES=$(cat "$DIR/failures" 2>/dev/null || echo 0)
@@ -88,8 +99,8 @@ check_health() {
 send_state() {
  state=$1;error=$2;out=$3
  jq -n --arg state "$state" --arg error "$error" --argjson process "$PROCESS" --argjson local "$LOCAL" --argjson public "$PUBLIC" \
- --argjson failures "$FAILURES" --argjson last "$LAST_REPAIR" --argjson repairs "$REPAIRS" --slurpfile traffic "$WORK/traffic.json" --slurpfile meta "$WORK/meta.json" \
- '{agent_version:4,traffic:$traffic[0],state:$state,error:$error,metadata:$meta[0],process_alive:$process,local_ws:$local,public_ws:$public,failure_count:$failures,last_repair:$last,repair_count:$repairs}' > "$out"
+ --argjson failures "$FAILURES" --argjson last "$LAST_REPAIR" --argjson repairs "$REPAIRS" --slurpfile resources "$WORK/resources.json" --slurpfile traffic "$WORK/traffic.json" --slurpfile meta "$WORK/meta.json" \
+ '{agent_version:7,resources:$resources[0],traffic:$traffic[0],state:$state,error:$error,metadata:$meta[0],process_alive:$process,local_ws:$local,public_ws:$public,failure_count:$failures,last_repair:$last,repair_count:$repairs}' > "$out"
 }
 run_repair() {
  mode=$1;limit=$2
@@ -106,17 +117,26 @@ run_repair() {
  done
  wait "$repair_pid"
 }
-if jq -e 'type=="object"' "$WORK/meta.json" >/dev/null; then
+PROBE_FAILED=false
+if [ "$HEALTH_MODE" = monitor ];then
+ PROBE_FAILED=$(jq -r '.health.probe_failed // false' "$WORK/control.json")
+ FAILURES=$(jq -r '.health.failure_count // 0' "$WORK/control.json")
+ if [ "$PROBE_FAILED" = true ] && [ "$FAILURES" -lt 3 ];then FAILURES=3;fi
+ STATE=$(jq -r '.health.health_status // "waiting"' "$WORK/control.json")
+ PROCESS=$(jq -r '.health.process_alive // false' "$WORK/control.json")
+ LOCAL=$(jq -r '.health.local_ws // false' "$WORK/control.json")
+fi
+if { [ "$HEALTH_MODE" != monitor ] || [ "$FAILURES" -ge 3 ]; } && jq -e 'type=="object"' "$WORK/meta.json" >/dev/null; then
  check_health
- if [ "$LOCAL" = true ] && { [ "$PUBLIC" = true ] || [ "$PROTOCOL" != vless-ws-argo ]; } && [ "$PROCESS" = true ]; then FAILURES=0;STATE=online
+ if [ "$PROBE_FAILED" != true ] && [ "$LOCAL" = true ] && { [ "$PUBLIC" = true ] || [ "$PROTOCOL" != vless-ws-argo ]; } && [ "$PROCESS" = true ]; then FAILURES=0;STATE=online
  else
   FAILURES=$((FAILURES+1));STATE=degraded;ERROR='本地服务或公网 WebSocket 隧道检查未通过'
   NOW=$(date +%s)
-  if [ "$FAILURES" -ge 3 ] && [ $((NOW-LAST_REPAIR)) -ge 300 ]; then
+  if [ "$MANAGED" = true ] && [ "$FAILURES" -ge 3 ] && [ $((NOW-LAST_REPAIR)) -ge 300 ]; then
    # A general egress outage must not create a tunnel restart loop.
    if [ "$PROTOCOL" != vless-ws-argo ] || curl --connect-timeout 3 --max-time 5 -fsS https://www.cloudflare.com/cdn-cgi/trace >/dev/null 2>&1; then
     LAST_REPAIR=$NOW;REPAIRS=$((REPAIRS+1));printf '%s\n' "$LAST_REPAIR" > "$DIR/last-repair";printf '%s\n' "$REPAIRS" > "$DIR/repairs"
-    if [ "$LOCAL" != true ]; then
+    if [ "$LOCAL" != true ] || [ "$PROBE_FAILED" = true ]; then
      run_repair service 60 || true
      check_health
     fi
@@ -131,7 +151,10 @@ if jq -e 'type=="object"' "$WORK/meta.json" >/dev/null; then
 fi
 printf '%s\n' "$FAILURES" > "$DIR/failures"
 send_state "$STATE" "$ERROR" "$WORK/report.json"
-api POST /agent/report "$WORK/ack.json" "$WORK/report.json" || exit 0
+report_ok=0
+api POST /agent/report "$WORK/ack.json" "$WORK/report.json" && report_ok=1
+jq --arg code "$HTTP_CODE" --argjson at "$(date +%s)" '{sampled_at:$at,state,process_alive,local_ws,public_ws,failure_count,repair_count,last_repair,resources,panel_http_code:$code}' "$WORK/report.json" > "$DIR/local-status.json.new" && mv "$DIR/local-status.json.new" "$DIR/local-status.json"
+[ "$report_ok" = 1 ] || exit 0
 [ ! -f "$DIR/disabled" ] || exit 0
 api GET /agent/work "$WORK/work.json" || exit 0
 if ! jq -e '.job!=null' "$WORK/work.json" >/dev/null; then exit 0; fi
@@ -181,3 +204,5 @@ if api POST /agent/report "$WORK/ack.json" "$DIR/pending-report.json"; then
  rm -f "$DIR/pending-report.json"
 fi
 cat "$WORK/log-tail"
+
+[ ! -x "$BASE/monitor-publish.sh" ] || sh "$BASE/monitor-publish.sh" >/dev/null 2>&1 || true

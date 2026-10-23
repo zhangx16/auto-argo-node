@@ -120,6 +120,8 @@ def summary(days=7,node_id=None):
         n['available']=bool(n['sampled_at'] and now-n['sampled_at']<180)
         total=totals.get(n['id'],{})
         n['rx']=total.get('rx',n['rx']);n['tx']=total.get('tx',n['tx']);n['since']=total.get('since','')
+        from . import quotas
+        n['quota']=quotas.usage(n['id'])
         n.update({k:v for k,v in regions.enrich(n).items() if k.startswith('country_') or k=='display_name'})
     keys=['rx','tx','today_rx','today_tx','month_rx','month_tx']
     return {'nodes':nodes,'totals':{k:sum(n[k] for n in nodes) for k in keys},'timezone':'UTC','history':history(days,node_id),
@@ -164,9 +166,22 @@ def tick():
     c=config()
     if not c.get('enabled') or not c.get('chat_id'):return
     conn=db.get_conn();now=int(time.time())
-    rows=conn.execute("SELECT n.id,n.remark,n.status,a.last_report_at,a.health_status,a.probe_status FROM nodes n JOIN node_agents a ON a.node_id=n.id WHERE a.bound=1 AND n.status NOT IN ('uninstalling','removed','pending')").fetchall()
+    rows=conn.execute("SELECT n.id,n.remark,n.status,a.last_report_at,a.health_status,a.probe_status,a.health_mode FROM nodes n JOIN node_agents a ON a.node_id=n.id WHERE a.bound=1 AND n.status NOT IN ('uninstalling','removed','pending')").fetchall()
+    from . import monitor
+    if any(n['health_mode']=='monitor' for n in rows):
+        collector_ok=monitor.collector_available()
+        collector_state='online' if collector_ok else 'offline'
+        old_collector=db.get_setting('monitor_collector_state','online')
+        if collector_state!=old_collector:
+            enqueue('monitor:'+collector_state+':'+str(now), '✅ Monitor 采集服务已恢复' if collector_ok else '⚠️ Monitor 采集服务不可用，暂缓探针心跳告警；协议转发检测继续运行')
+            db.set_setting('monitor_collector_state',collector_state)
+    else:collector_ok=True
     for n in rows:
-        state='offline' if agent.age(n['last_report_at'])>=c.get('offline_seconds',180) else n['health_status']
+        if n['health_mode']=='monitor' and not collector_ok:continue
+        if n['health_mode']=='none':
+            if n['probe_status'] not in ('ok','failed'):continue
+            state='online' if n['probe_status']=='ok' else 'degraded'
+        else:state='offline' if agent.age(n['last_report_at'])>=c.get('offline_seconds',180) else n['health_status']
         if state in ['waiting','installing']:continue
         state='online' if state=='online' and n['probe_status']!='failed' else ('degraded' if state=='online' else state)
         old=conn.execute('SELECT * FROM notification_states WHERE node_id=?',(n['id'],)).fetchone()

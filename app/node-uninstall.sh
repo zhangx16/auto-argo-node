@@ -49,7 +49,7 @@ curl --config "$DIR/curl.conf" --retry 3 --retry-all-errors -fsS -X POST "$PANEL
 (crontab -l 2>/dev/null || true) | grep -vE '# argo-deploy-node-__NODE_ID__$' > "$DIR/cron.new" || true
 crontab "$DIR/cron.new"
 rm -rf "$DIR"
-if ! find /usr/local/etc/argo-deploy -name settings.json -print | grep -q .; then
+if [ ! -f /usr/local/etc/argo-monitor/environment ] && ! find /usr/local/etc/argo-deploy -name settings.json -print | grep -q .; then
  rm -rf /usr/local/lib/argo-deploy /usr/local/etc/argo-deploy
 fi
 exit 0

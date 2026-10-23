@@ -1,0 +1,17 @@
+'use strict';
+(()=>{
+ const el=id=>document.getElementById(id);if(!el('events-dialog'))return;
+ const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const bytes=n=>(Number(n||0)/1073741824).toLocaleString('zh-CN',{maximumFractionDigits:3})+' GiB';
+ let eventNode=null,quotaNode=null,eventVersion=0,quotaVersion=0,timer=null;
+ async function api(path,method='GET',body){const r=await fetch(path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});if(r.status===401){location.href='/static/login.html';throw Error('请先登录');}const d=await r.json();if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:'请求失败');return d;}
+ function error(id,message=''){el(id).textContent=message;el(id).hidden=!message;}
+ async function events(){const current=eventVersion;try{const d=await api(`/api/nodes/${eventNode}/events`);if(current!==eventVersion||!el('events-dialog').open)return;el('events-list').innerHTML=d.events.map(e=>`<article class="chain-card"><p class="meta">${esc(e.created_at)} · ${e.level==='warning'?'异常 / 提醒':'状态记录'}</p><p>${esc(e.message)}</p></article>`).join('')||'<p class="empty">暂无事件，新状态变化后会显示在这里。</p>';error('events-error');}catch(e){if(current===eventVersion)error('events-error',e.message);}}
+ document.addEventListener('click',async event=>{const b=event.target.closest('[data-events],[data-quota]');if(!b)return;
+  if(b.dataset.events){eventNode=Number(b.dataset.events);eventVersion++;el('events-title').textContent=(b.dataset.nodeName||'节点')+' · 事件时间线';error('events-error');el('events-list').textContent='正在读取…';el('events-dialog').showModal();events();clearInterval(timer);timer=setInterval(events,15000);}
+  else{quotaNode=Number(b.dataset.quota);const current=++quotaVersion;error('quota-error');el('quota-title').textContent=(b.dataset.nodeName||'节点')+' · 流量额度';el('quota-save').disabled=true;el('quota-current').textContent='正在读取…';el('quota-form').reset();el('quota-dialog').showModal();try{const q=await api(`/api/traffic/nodes/${quotaNode}/quota`);if(current!==quotaVersion||!el('quota-dialog').open)return;el('quota-limit').value=q.limit_bytes/1073741824;el('quota-reset').value=q.reset_day;el('quota-warning').value=q.warning_percent;el('quota-mode').value=q.count_mode;el('quota-current').textContent=`本周期（UTC）：${q.cycle_start} 至 ${q.cycle_end}（不含）；已采集 ${bytes(q.used_bytes)}，${q.measured_days} 天有记录。`+(q.limit_bytes?`剩余 ${bytes(q.remaining_bytes)}。`:'尚未设置额度。');el('quota-save').disabled=false;}catch(e){if(current===quotaVersion)error('quota-error',e.message);}}
+ });
+ el('events-close').onclick=()=>el('events-dialog').close();el('events-dialog').addEventListener('close',()=>{eventVersion++;clearInterval(timer);timer=null;});
+ el('quota-close').onclick=()=>el('quota-dialog').close();el('quota-dialog').addEventListener('close',()=>quotaVersion++);
+ el('quota-form').onsubmit=async event=>{event.preventDefault();const current=quotaVersion;el('quota-save').disabled=true;error('quota-error');try{await api(`/api/traffic/nodes/${quotaNode}/quota`,'PUT',{limit_bytes:Math.round(Number(el('quota-limit').value)*1073741824),reset_day:Number(el('quota-reset').value),warning_percent:Number(el('quota-warning').value),count_mode:el('quota-mode').value});if(current!==quotaVersion)return;el('quota-dialog').close();el('traffic-refresh').click();}catch(e){if(current===quotaVersion)error('quota-error',e.message);}finally{if(current===quotaVersion)el('quota-save').disabled=false;}};
+})();

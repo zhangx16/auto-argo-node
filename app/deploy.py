@@ -188,6 +188,7 @@ def installer_text():
     marker = "jq -c 'to_entries[]' \"$ARGO_METADATA_FILE\""
     if text.count(marker) != 1:
         raise RuntimeError('上游守护脚本结构已变化，拒绝部署')
+    text=text.replace('\n# Panel-owned maintenance entry point;', '\n[ ! -f /usr/local/lib/argo-deploy/core.sh ] || source /usr/local/lib/argo-deploy/core.sh\n# Panel-owned maintenance entry point;')
     return text.replace(marker, "jq -c 'to_entries[] | select(.value.manager != \"argo-deploy-fixed\")' \"$ARGO_METADATA_FILE\"")
 
 

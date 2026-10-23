@@ -22,7 +22,13 @@ def init():
         port INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, source_label TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );''')
+    if 'source_available' not in {r['name'] for r in c.execute('PRAGMA table_info(external_nodes)')}:
+        c.execute('ALTER TABLE external_nodes ADD COLUMN source_available INTEGER NOT NULL DEFAULT 1')
     c.commit()
+
+
+def available(node):
+    return bool(node['enabled']) and bool(node.get('source_available',1))
 
 
 class ImportBody(BaseModel):
@@ -73,8 +79,8 @@ def fingerprint(p):
 
 
 def describe(row):
-    from . import regions
-    return regions.enrich({k: bool(v) if k == 'enabled' else v for k, v in dict(row).items() if k != 'fingerprint'},'external')
+    from . import regions, labels
+    return labels.enrich(regions.enrich({k: bool(v) if k == 'enabled' else v for k, v in dict(row).items() if k != 'fingerprint'},'external'),'external')
 
 
 class LimitedLoader(yaml.SafeLoader):
@@ -190,29 +196,40 @@ def register(app, owner):
     @app.put('/api/external-nodes/{node_id}')
     def edit(node_id: int, body: EditBody, request: Request):
         owner(request)
-        get(node_id)
-        try:
-            p = parse_uri(body.uri, body.name)
-            identity = fingerprint(p)
-        except (ValueError, TypeError, KeyError, AttributeError):
-            raise HTTPException(422, '节点参数无效，请检查链接')
-        c = db.get_conn()
-        other = c.execute('SELECT id FROM external_nodes WHERE fingerprint=? AND id<>?', (identity, node_id)).fetchone()
-        if other:
-            raise HTTPException(409, '已有相同配置的外部节点')
-        try:
-            with c:
-                c.execute('''UPDATE external_nodes SET name=?,uri=?,fingerprint=?,protocol=?,server=?,port=?,enabled=?,updated_at=? WHERE id=?''',
-                          (p['name'], to_uri(p), identity, p['protocol'], p['server'], p['port'], int(body.enabled), db.utcnow(), node_id))
-        except sqlite3.IntegrityError:
-            raise HTTPException(409, '已有相同配置的外部节点')
-        return describe(get(node_id))
+        from . import agent
+        with agent.LOCK:
+            get(node_id)
+            try:
+                p = parse_uri(body.uri, body.name)
+                identity = fingerprint(p)
+            except (ValueError, TypeError, KeyError, AttributeError):
+                raise HTTPException(422, '节点参数无效，请检查链接')
+            c = db.get_conn()
+            from . import sources
+            owning=c.execute('SELECT source_id FROM external_source_nodes WHERE node_id=? AND owned=1',(node_id,)).fetchone()
+            if owning:identity=sources.storage_identity(owning['source_id'],identity)
+            other = c.execute('SELECT id FROM external_nodes WHERE fingerprint=? AND id<>?', (identity, node_id)).fetchone()
+            if other:
+                raise HTTPException(409, '已有相同配置的外部节点')
+            from . import sources
+            try:
+                with c:
+                    sources.edited(node_id,body)
+                    c.execute('''UPDATE external_nodes SET name=?,uri=?,fingerprint=?,protocol=?,server=?,port=?,enabled=?,updated_at=? WHERE id=?''',
+                              (p['name'], to_uri(p), identity, p['protocol'], p['server'], p['port'], int(body.enabled), db.utcnow(), node_id))
+            except sqlite3.IntegrityError:
+                raise HTTPException(409, '已有相同配置的外部节点')
+            return describe(get(node_id))
 
     @app.delete('/api/external-nodes/{node_id}')
     def delete(node_id: int, request: Request):
         owner(request)
-        get(node_id)
-        c = db.get_conn()
-        with c:
-            c.execute('DELETE FROM external_nodes WHERE id=?', (node_id,))
-        return {'ok': True}
+        from . import agent
+        with agent.LOCK:
+            get(node_id)
+            c = db.get_conn()
+            from . import sources
+            with c:
+                sources.removed(node_id)
+                c.execute('DELETE FROM external_nodes WHERE id=?', (node_id,))
+            return {'ok': True}
