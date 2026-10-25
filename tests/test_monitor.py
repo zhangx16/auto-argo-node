@@ -32,10 +32,10 @@ class MonitorContracts(unittest.TestCase):
         self.host();c=db.get_conn();c.execute("UPDATE node_agents SET health_mode='monitor',last_report_at='2020-01-01T00:00:00Z',health_status='degraded',failure_count=4 WHERE node_id=?",(self.id,));c.commit()
         agent.accept_report(agent.row(self.id),agent.Report(state='online',local_ws=True,process_alive=True,public_ws=True))
         a=agent.row(self.id);self.assertEqual(a['failure_count'],4);self.assertEqual(a['last_report_at'],'2020-01-01T00:00:00Z');self.assertEqual(a['health_status'],'degraded')
-    def test_protocol_only_has_no_cron_and_old_bootstrap_still_managed(self):
+    def test_heartbeat_cron_is_installed_even_when_mutation_is_disabled(self):
         script=agent_scripts.bootstrap_script('https://panel.example.com','fixture-enrollment',self.id,{'management_enabled':0})
-        self.assertNotIn("printf '* * * * * sh",script)
-        self.assertNotIn('apk add --no-cache nftables',script)
+        self.assertIn("printf '* * * * * sh",script)
+        self.assertIn('apk add --no-cache nftables',script)
         self.assertIn('sh "$BASE/agent.sh" "$DIR"',script)
         for s in [script,agent_scripts.bootstrap_script('https://panel.example.com','fixture',self.id)]:subprocess.run(['sh','-n'],input=s.encode(),check=True)
     def test_unmonitored_is_not_offline_and_deletion_keeps_host(self):

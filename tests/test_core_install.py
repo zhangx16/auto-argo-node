@@ -20,6 +20,10 @@ uname() { echo x86_64; }
 _check_combined_config_files() { [ ! -f "$ROOT/reject" ]; }
 _manage_service() { return 0; }
 source "$2"
+export ARGO_RELEASE_SHA256=0000000000000000000000000000000000000000000000000000000000000000
+if _panel_install_core;then exit 4;fi
+[ "$("$SINGBOX_BIN")" = original ]
+unset ARGO_RELEASE_SHA256
 _panel_install_core
 _panel_commit_core
 [ "$("$SINGBOX_BIN" version)" = 'sing-box version 1.14.3' ]

@@ -1,0 +1,43 @@
+'use strict';
+(()=>{
+ const el=id=>document.getElementById(id),esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const labels={ok:'正常',failed:'失败',unknown:'未知 / 待验证',pending:'等待',running:'执行中',verifying:'验证中',done:'完成',paused:'已暂停',cancelled:'已取消'};
+ const stamp=s=>s?new Date(typeof s==='number'?s*1000:s).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false}):'尚无记录';
+ const selected=new Set();let latest=null,loading=false,mutating=false;
+ async function api(path,method='GET',body){const r=await fetch(path,{method,credentials:'same-origin',headers:{'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});if(r.status===401){location.href='/static/login.html';throw Error('请先登录');}const d=await r.json();if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:'请求失败');return d;}
+ function error(message='',target='ops-error'){el(target).textContent=message;el(target).hidden=!message;}
+ function state(s){return `<span class="${s==='ok'||s==='done'?'ops-good':s==='failed'?'ops-bad':'ops-muted'}">${esc(labels[s]||s)}</span>`;}
+ function maintenance(c){return c.maintenance?`维护至 ${stamp(c.maintenance.until)}（${c.maintenance.scope==='host'?'服务器':'节点'}）`:c.repair.tripped?'自动修复已暂停':`修复 ${c.repair.attempts}/${c.repair.limit_count} 次 / ${c.repair.window_minutes} 分钟`;}
+ async function refresh(){if(loading)return;loading=true;try{const [h,v,b]=await Promise.all([api('/api/operations/health'),api('/api/operations/versions'),api('/api/operations/upgrades')]);
+ el('ops-health').innerHTML=Object.entries(h.components).map(([name,c])=>`<article class="ops-card"><strong>${esc(name)}</strong><p>${state(c.state)}</p><small>${esc(stamp(c.at))}</small></article>`).join('')+`<article class="ops-card"><strong>任务与投递</strong><p>等待 ${h.jobs.queued||0} · 执行 ${h.jobs.running||0}</p><small>待投递 ${h.notifications.n} · 最高重试 ${h.notifications.retries}</small></article><article class="ops-card"><strong>Cloudflare 最近检查</strong><p>${state(h.cloudflare.state||'unknown')}</p><small>${esc(h.cloudflare.message||'尚未手动检查')} · ${esc(stamp(h.cloudflare.at))}</small></article>`;
+ if(h.database)el('ops-health').insertAdjacentHTML('beforeend',`<article class="ops-card"><strong>数据库与检测预算</strong><p>数据库 ${(h.database.database_bytes/1048576).toFixed(1)} MiB · WAL ${(h.database.wal_bytes/1048576).toFixed(1)} MiB</p><small>${h.database.migrations.length} 条迁移记录 · 检测客户端 ${h.client_budget?.active||0}/${h.client_budget?.limit||4}</small></article>`);
+ el('ops-health-note').textContent=h.note+' · 时间：北京时间';
+ const old=el('ops-host').value;el('ops-host').innerHTML=v.hosts.map(h=>`<option value="${esc(h.id)}">${esc(h.name)}${h.maintenance?'（维护中）':''}</option>`).join('');if(v.hosts.some(h=>h.id===old))el('ops-host').value=old;
+ el('ops-release').textContent=`管理脚本目标 v${v.target_agent_version} · 核心目标 ${v.release.core_version||'资源未配置'}（版本锁定的服务器沿用其固定版本）`;
+ const ids=new Set(v.nodes.filter(n=>n.eligible).map(n=>n.id));for(const id of selected)if(!ids.has(id))selected.delete(id);
+ el('ops-versions').innerHTML=`<table><thead><tr><th>选择</th><th>节点 / 服务器</th><th>管理脚本</th><th>核心 / 探针上报</th><th>维护与修复</th></tr></thead><tbody>${v.nodes.map(n=>`<tr><td><input type="checkbox" data-upgrade-node="${n.id}" aria-label="选择 ${esc(n.name)}" ${selected.has(n.id)?'checked':''} ${n.eligible?'':'disabled'}></td><td><button type="button" class="ghost" data-events="${n.id}" data-node-name="${esc(n.name)}">${esc(n.name)}</button><p class="meta">${esc(n.host_name||'未绑定服务器')} · ${n.fresh?'最近有上报':'上报待确认'}</p></td><td>v${n.agent_version}${n.agent_version<8?' · 待升级':''}${n.eligible?'':' · 未启用管理'}</td><td>${esc(n.core_channel)} ${esc(n.core_version||'版本未上报')}<p class="meta">探针安装摘要：${esc(n.probe_sha256?.slice(0,12)||'尚未上报')}</p></td><td>${esc(maintenance(n.control))}</td></tr>`).join('')}</tbody></table>`;
+ el('ops-batches').innerHTML=b.map(b=>`<article class="ops-batch"><strong>批次 #${b.id} · ${esc(b.kind)} · ${state(b.status)}</strong><p>${esc(b.message)}</p><ol>${b.items.map(i=>`<li>${esc(i.name)} · ${state(i.status)} ${esc(i.message)}</li>`).join('')}</ol>${['running','paused'].includes(b.status)?`<div class="task-actions"><button type="button" class="ghost" data-batch="${b.id}" data-batch-action="${b.status==='running'?'pause':'resume'}">${b.status==='running'?'暂停后续':'继续批次'}</button><button type="button" class="ghost" data-batch="${b.id}" data-batch-action="cancel">取消后续</button></div>`:''}</article>`).join('')||'<p class="empty">暂无升级批次。</p>';
+ error();}catch(e){error(e.message);}finally{loading=false;}}
+ window.renderOperationsDiagnostics=d=>{latest=d;const box=el('ops-diagnostics');const fresh=box.dataset.node!==String(d.node_id)||!box.children.length;
+ if(fresh){box.dataset.node=d.node_id;box.innerHTML=`<div id="ops-checks" class="ops-grid"></div><p id="ops-control-state" class="meta"></p><p id="ops-version-note" class="meta"></p><div class="ops-inline"><label>节点维护时长<select id="ops-node-minutes"><option value="30">30 分钟</option><option value="120">2 小时</option><option value="1440">24 小时</option><option value="0">结束节点维护</option></select></label><button class="ghost" type="button" data-diag-action="maintenance">应用维护</button></div><div class="ops-inline"><label>窗口（分钟）<input id="ops-window" type="number" min="10" max="1440" value="${d.control.repair.window_minutes}"></label><label>最多修复次数<input id="ops-limit" type="number" min="1" max="20" value="${d.control.repair.limit_count}"></label><button class="ghost" type="button" data-diag-action="policy">保存修复上限</button><button class="ghost" type="button" data-diag-action="reset">解除暂停 / 重新计数</button></div><button class="ghost" type="button" data-diag-action="export">导出诊断 JSON</button><h3>事件时间线</h3>`;}
+ el('ops-checks').innerHTML=d.checks.map(c=>`<article class="ops-card"><strong>${esc(c.name)}</strong><p>${state(c.state)}</p><small>${esc(stamp(c.at))}</small></article>`).join('');el('ops-control-state').textContent=maintenance(d.control);el('ops-version-note').textContent=`管理脚本 v${d.agent_version}。${d.note}`;
+ };
+ document.addEventListener('change',e=>{if(e.target.matches('[data-upgrade-node]')){const id=Number(e.target.dataset.upgradeNode);e.target.checked?selected.add(id):selected.delete(id);}});
+ async function mutate(fn,target='ops-error'){if(mutating)return;mutating=true;error('',target);try{await fn();}catch(e){error(e.message,target);}finally{mutating=false;}}
+ document.addEventListener('click',e=>{const b=e.target.closest('[data-batch],[data-diag-action]');if(!b)return;
+ if(b.dataset.batch){mutate(async()=>{await api(`/api/operations/upgrades/${b.dataset.batch}/${b.dataset.batchAction}`,'POST');await refresh();});return;}
+ if(!latest)return;const id=latest.node_id,action=b.dataset.diagAction;
+ mutate(async()=>{if(action==='export'){const d=await api(`/api/nodes/${id}/diagnostics`);const url=URL.createObjectURL(new Blob([JSON.stringify(d,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download=`node-${id}-diagnostics.json`;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);return;}
+ if(action==='maintenance')await api('/api/operations/maintenance','PUT',{scope:'node',target:String(id),minutes:Number(el('ops-node-minutes').value)});
+ if(action==='policy'){const w=el('ops-window'),l=el('ops-limit');if(!w.reportValidity()||!l.reportValidity())return;await api(`/api/nodes/${id}/repair-policy`,'PUT',{window_minutes:Number(w.value),limit_count:Number(l.value)});}
+ if(action==='reset')await api(`/api/nodes/${id}/repair-reset`,'POST');
+ const d=await api(`/api/nodes/${id}/diagnostics`);if(latest?.node_id===id)window.renderOperationsDiagnostics(d);
+ if(document.body.dataset.activeModule==='operations-module')await refresh();},'events-error');
+ });
+ el('ops-refresh').onclick=refresh;el('ops-cf').onclick=()=>mutate(async()=>{await api('/api/operations/health/cloudflare','POST');await refresh();});
+ el('ops-host-form').onsubmit=e=>{e.preventDefault();mutate(async()=>{await api('/api/operations/maintenance','PUT',{scope:'host',target:el('ops-host').value,minutes:Number(el('ops-host-minutes').value)});await refresh();});};
+ el('ops-upgrade-form').onsubmit=e=>{e.preventDefault();mutate(async()=>{if(!selected.size)throw Error('请先选择节点');await api('/api/operations/upgrades','POST',{kind:el('ops-upgrade-kind').value,node_ids:[...selected].sort((a,b)=>a-b)});selected.clear();await refresh();});};
+ document.addEventListener('module-navigate',e=>{if(e.detail.id==='operations-module')refresh();});
+ setInterval(()=>{if(document.body.dataset.activeModule==='operations-module'&&!document.hidden&&!mutating)refresh();},15000);
+ if(document.body.dataset.activeModule==='operations-module')refresh();
+})();

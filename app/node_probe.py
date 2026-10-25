@@ -16,6 +16,11 @@ def probe_link(link, timeout=15):
 
 
 def native_probe(link,timeout=15):
+    from . import runtime_budget
+    with runtime_budget.slot():return _native_probe(link,timeout)
+
+
+def _native_probe(link,timeout=15):
     import json,os,subprocess,tempfile
     from pathlib import Path
     from .node_formats import parse_uri,singbox_outbound
@@ -37,8 +42,14 @@ def native_probe(link,timeout=15):
                         with socket.create_connection(('127.0.0.1',port),timeout=.1):break
                     except OSError:time.sleep(.05)
                 result=subprocess.run(['curl','--noproxy','','--proxy',f'http://127.0.0.1:{port}','--connect-timeout','5','--max-time',str(timeout),'-fsS','-o',os.devnull,'-w','%{http_code}','https://www.gstatic.com/generate_204'],stdout=subprocess.PIPE,stderr=quiet,timeout=timeout+2)
-                if result.returncode or result.stdout!=b'204':raise ValueError('协议握手或 HTTPS 实际转发未通过（检查公网地址、映射端口和 TCP/UDP 放行）')
-                return {'ok':True,'latency_ms':round((time.monotonic()-start)*1000),'http_status':204}
+                status=204
+                if result.returncode or result.stdout!=b'204':
+                    # A blocked/slow Google endpoint alone must not restart a healthy node.
+                    alternate=subprocess.run(['curl','--noproxy','','--proxy',f'http://127.0.0.1:{port}','--connect-timeout','5','--max-time',str(timeout),'--max-filesize','4096','-fsS','-w','\n%{http_code}','https://www.cloudflare.com/cdn-cgi/trace'],stdout=subprocess.PIPE,stderr=quiet,timeout=timeout+2)
+                    body,_,code=alternate.stdout.rpartition(b'\n')
+                    if alternate.returncode or code!=b'200' or not any(line.startswith(b'ip=') for line in body.splitlines()):raise ValueError('协议握手或两处 HTTPS 实际转发均未通过（检查公网地址、映射端口和 TCP/UDP 放行）')
+                    status=200
+                return {'ok':True,'latency_ms':round((time.monotonic()-start)*1000),'http_status':status}
             finally:
                 process.terminate()
                 try:process.wait(timeout=3)

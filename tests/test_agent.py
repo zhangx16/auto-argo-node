@@ -11,6 +11,40 @@ class AgentApiTests(unittest.TestCase):
     setUpClass=classmethod(api_tests.ApiTests.setUpClass.__func__)
     tearDownClass=classmethod(api_tests.ApiTests.tearDownClass.__func__)
     call=api_tests.ApiTests.call
+    def test_reinstall_is_dormant_until_execution_and_preserves_saved_identity(self):
+        import re
+        id,token,meta=self.initial_success()
+        _,before=self.agent_call('/agent/work',token)
+        self.assertIsNone(before['job'])
+        code,command=self.call(f'/api/agent-nodes/{id}/reinstall','POST')
+        self.assertEqual(code,200,command);self.assertTrue(command['reinstall'])
+        _,work=self.agent_call('/agent/work',token);self.assertIsNone(work['job'])
+        enrollment=re.search(r'/agent/bootstrap/([A-Za-z0-9_-]+)\.sh',command['command']).group(1)
+        replacement=self.enroll_agent(enrollment)
+        self.assertNotEqual(token,replacement)
+        code,_=self.agent_call('/agent/work',token);self.assertEqual(code,401)
+        _,work=self.agent_call('/agent/work',replacement)
+        self.assertEqual(work['job']['operation'],'install')
+        config=json.loads(work['job']['config_json'])
+        self.assertEqual(config['uuid'],meta['uuid']);self.assertEqual(config['node_port'],meta['local_port'])
+        code,_=self.call('/agent/enroll','POST',{'enrollment_token':enrollment},authed=False);self.assertEqual(code,410)
+        code,_=self.call(f'/api/agent-nodes/{id}/reinstall','POST');self.assertEqual(code,409)
+
+    def test_reinstall_ssh_bootstrap_uses_once_only_execution_channel(self):
+        script=bootstrap_script('https://fixture.invalid','fixture-enrollment',42,{'management_enabled':0,'ssh_transport':True,'desired_json':'{}'})
+        subprocess.run(['sh','-n'],input=script.encode(),check=True)
+        self.assertIn('X-SSH-Execution: 1',script)
+        self.assertIn("printf '* * * * * sh",script)
+
+    def test_reinstall_rechecks_tasks_before_consuming_enrollment(self):
+        import re
+        id,token,_=self.initial_success()
+        code,command=self.call(f'/api/agent-nodes/{id}/reinstall','POST');self.assertEqual(code,200)
+        enrollment=re.search(r'/agent/bootstrap/([A-Za-z0-9_-]+)\.sh',command['command']).group(1)
+        code,_=self.call(f'/api/agent-nodes/{id}/refresh','POST');self.assertEqual(code,200)
+        code,_=self.call('/agent/enroll','POST',{'enrollment_token':enrollment},authed=False);self.assertEqual(code,409)
+        code,_=self.agent_call('/agent/work',token);self.assertEqual(code,200)
+
     def create_agent(self,port=18080):
         code,data=self.call('/api/agent-nodes','POST',{'remark':'Agent QA','node_port':port,'client_address':'edge.example.com','client_port':443})
         self.assertEqual(code,200,data)

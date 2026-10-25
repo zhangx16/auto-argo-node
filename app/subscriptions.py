@@ -42,11 +42,13 @@ def init():
     );
     ''')
     c=db.get_conn()
-    columns={r['name'] for r in c.execute('PRAGMA table_info(subscriptions)')}
-    if 'chains_json' not in columns:c.execute("ALTER TABLE subscriptions ADD COLUMN chains_json TEXT NOT NULL DEFAULT '[]'")
-    if 'chain_only' not in columns:c.execute('ALTER TABLE subscriptions ADD COLUMN chain_only INTEGER NOT NULL DEFAULT 0')
-    if 'traffic_limit_bytes' not in columns:c.execute('ALTER TABLE subscriptions ADD COLUMN traffic_limit_bytes INTEGER NOT NULL DEFAULT 0')
+    from . import schema
+    schema.columns('subscriptions',[('chains_json', "TEXT NOT NULL DEFAULT '[]'"), ('chain_only', 'INTEGER NOT NULL DEFAULT 0'), ('traffic_limit_bytes', 'INTEGER NOT NULL DEFAULT 0')],version=1)
     c.commit()
+    from . import subscription_health
+    subscription_health.init()
+    from . import subscription_composition
+    subscription_composition.init()
     from . import sources
     sources.init()
     from . import media_unlock
@@ -57,6 +59,8 @@ class SubscriptionBody(BaseModel):
     name: str = Field(min_length=1, max_length=80)
     node_ids: list[Annotated[int, Field(ge=1)]] = Field(default_factory=list, max_length=1000)
     external_node_ids: list[Annotated[int, Field(ge=1)]] = Field(default_factory=list, max_length=1000)
+    included_subscription_ids: list[Annotated[int, Field(ge=1)]] = Field(default_factory=list, max_length=30)
+    usage_source_id: int = Field(default=0, ge=0)
     chains: list[proxy_chains.Chain]=Field(default_factory=list,max_length=30)
     chain_only: bool=False
     traffic_limit_bytes: int=Field(default=0,ge=0,le=9_000_000_000_000_000)
@@ -71,7 +75,7 @@ class SubscriptionBody(BaseModel):
             raise ValueError('请输入有效的订阅名称')
         return value
 
-    @field_validator('node_ids', 'external_node_ids')
+    @field_validator('node_ids', 'external_node_ids', 'included_subscription_ids')
     @classmethod
     def unique_ids(cls, value):
         if len(value) != len(set(value)):
@@ -123,29 +127,38 @@ def expired(subscription):
 
 
 def describe(subscription, public_url, secret):
-    members = member_nodes(subscription['id'])
-    imported = external_members(subscription['id'])
-    result = {k: v for k, v in subscription.items() if k != 'token_version'}
-    result.update(enabled=bool(subscription['enabled']), expired=expired(subscription),
-                  node_ids=[n['id'] for n in members], external_node_ids=[n['id'] for n in imported],
-                  node_count=len(members)+len(imported), managed_node_count=len(members), external_node_count=len(imported),
-                  exportable_count=sum(eligible(n) for n in members)+sum(external_nodes.available(n) for n in imported))
+    from . import subscription_health
+    from . import subscription_composition as composition
+    direct=member_nodes(subscription['id']);imported=external_members(subscription['id'])
+    plan=composition.resolve(subscription)
+    configured_chains=proxy_chains.configured(subscription)
+    result={k:v for k,v in subscription.items() if k!='token_version'}
+    result.update(enabled=bool(subscription['enabled']),expired=expired(subscription),
+      node_ids=[n['id'] for n in direct],external_node_ids=[n['id'] for n in imported],
+      included_subscription_ids=[r['source_id'] for r in composition.references(subscription['id'])],
+      source_subscriptions=plan['states'],node_count=len(plan['members']),
+      resolved_node_ids=[ref[1] for ref in plan['members'] if ref[0]=='managed'],
+      resolved_external_node_ids=[ref[1] for ref in plan['members'] if ref[0]=='external'],
+      managed_node_count=sum(k[0]=='managed' for k in plan['members']),external_node_count=sum(k[0]=='external' for k in plan['members']),
+      exportable_count=0 if plan['errors'] else len(plan['standalone'])+len(plan['chains']))
     base = f"{public_url()}/subscribe/{subscription['id']}/{token_for(subscription, secret)}"
-    chains=proxy_chains.configured(subscription)
-    available={('managed',n['id']) for n in members if eligible(n)}|{('external',n['id']) for n in imported if external_nodes.available(n)}
-    errors=proxy_chains.errors(chains,available)
+    result['health_isolation']=subscription_health.describe(subscription['id'])
     result.pop('chains_json',None)
-    result.update(chains=chains,chain_only=bool(subscription.get('chain_only')),chain_count=len(chains),chain_errors=errors)
-    if chains:
-        result['exportable_count']=0 if errors else len(chains)+(0 if result['chain_only'] else result['exportable_count'])
-    result['usage']=usage(subscription,members,imported)
-    result['formats']=['clash','singbox'] if chains else list(FORMATS)
+    result.update(chains=configured_chains,chain_only=bool(subscription.get('chain_only')),chain_count=len(plan['chains']),
+      chain_errors=plan['errors'],isolated_chain_count=len(configured_chains)-len(subscription_health.chains(subscription,configured_chains)))
+    result['usage']=usage(subscription,plan=plan)
+    result['formats']=['clash','singbox'] if plan['has_chains'] else list(FORMATS)
     result['page_url']=f"{public_url()}/subscription/{subscription['id']}/{token_for(subscription,secret)}"
     result['urls'] = {fmt: base + '?format=' + fmt for fmt in result['formats']}
     return result
 
 
 def save(body, subscription_id=None):
+    from . import agent
+    with agent.LOCK:return _save(body,subscription_id)
+
+
+def _save(body, subscription_id=None):
     c = db.get_conn()
     with c:
         existing = set()
@@ -160,6 +173,11 @@ def save(body, subscription_id=None):
                 body=body.model_copy(update={'chains':[proxy_chains.Chain.model_validate(chain) for chain in proxy_chains.configured(previous)]})
             if 'chain_only' not in body.model_fields_set:
                 body=body.model_copy(update={'chain_only':bool(previous.get('chain_only'))})
+            for field in ('included_subscription_ids','usage_source_id'):
+                if field not in body.model_fields_set:
+                    from . import subscription_composition as composition
+                    value=[r['source_id'] for r in composition.references(subscription_id)] if field=='included_subscription_ids' else previous.get(field,0)
+                    body=body.model_copy(update={field:value})
             existing = {n['id'] for n in member_nodes(subscription_id)}
             existing_external = {n['id'] for n in external_members(subscription_id)}
         # Fail atomically if the selection contains a missing or uninstalled node.
@@ -171,6 +189,8 @@ def save(body, subscription_id=None):
             imported = external_nodes.get(node_id)
             if not imported['enabled'] and node_id not in existing_external:
                 raise HTTPException(409, '所选外部节点已停用，请重新选择')
+        from . import subscription_composition as composition
+        source_rows=composition.validate(subscription_id,body.included_subscription_ids,body.usage_source_id)
         proxy_chains.validate(body.chains,body.node_ids,body.external_node_ids,body.chain_only)
         now = db.utcnow()
         if subscription_id is None:
@@ -184,14 +204,18 @@ def save(body, subscription_id=None):
             c.execute('DELETE FROM subscription_external_nodes WHERE subscription_id=?', (subscription_id,))
         c.execute('UPDATE subscriptions SET chains_json=?,chain_only=? WHERE id=?',(json.dumps([chain.model_dump() for chain in body.chains],ensure_ascii=False),int(body.chain_only),subscription_id))
         c.execute('UPDATE subscriptions SET traffic_limit_bytes=? WHERE id=?',(body.traffic_limit_bytes,subscription_id))
+        c.execute('UPDATE subscriptions SET usage_source_id=? WHERE id=?',(body.usage_source_id,subscription_id))
+        composition.save(subscription_id,body.included_subscription_ids,source_rows)
         c.executemany('INSERT INTO subscription_nodes VALUES (?,?,?)',
                       [(subscription_id, node_id, pos) for pos, node_id in enumerate(body.node_ids)])
         c.executemany('INSERT INTO subscription_external_nodes VALUES (?,?,?)',
                       [(subscription_id, node_id, pos) for pos, node_id in enumerate(body.external_node_ids)])
+        saved_plan=composition.resolve(get(subscription_id))
+        if any(s['status']=='limit' for s in saved_plan['states']):raise HTTPException(422,'汇总后最多 1000 个节点、120 条链路，请减少引用')
     return get(subscription_id)
 
 
-def usage(subscription,members=None,imported=None):
+def _direct_usage(subscription,members=None,imported=None):
     members=member_nodes(subscription['id']) if members is None else members
     imported=external_members(subscription['id']) if imported is None else imported
     chains=proxy_chains.configured(subscription)
@@ -208,19 +232,83 @@ def usage(subscription,members=None,imported=None):
             upload+=row['rx'];download+=row['tx'];measured+=1
             stale+=int(not row['sampled_at'] or now-row['sampled_at']>=180)
             if row['since']:since.append(row['since'])
+    # Upstream account counters are reported once per source, never once per node.
+    upstream=[];covered=set();external_ids={n['id'] for n in imported if external_nodes.available(n) and (used is None or ('external',n['id']) in used)}
+    if external_ids and c.execute("SELECT 1 FROM sqlite_master WHERE name='external_sources'").fetchone():
+        rows=c.execute('SELECT DISTINCT s.id,s.name,s.usage_json,s.usage_checked,s.interval_minutes FROM external_sources s JOIN external_source_nodes n ON n.source_id=s.id WHERE n.present=1 AND n.excluded=0 AND n.node_id IN ('+','.join('?' for _ in external_ids)+')',tuple(sorted(external_ids))).fetchall()
+        for source in rows:
+            values=json.loads(source['usage_json'])
+            if not all(k in values for k in ('upload','download','total')):continue
+            from . import agent
+            is_stale=agent.age(source['usage_checked'])>max(3600,source['interval_minutes']*120)
+            upstream.append({'source_id':source['id'],'name':source['name'],**values,'checked_at':source['usage_checked'],'stale':is_stale})
+            covered.update(r[0] for r in c.execute('SELECT node_id FROM external_source_nodes WHERE source_id=? AND present=1 AND excluded=0',(source['id'],)) if r[0] in external_ids)
+    if upstream and not ids and len(upstream)==1 and len(covered)==external:
+        u=upstream[0]
+        return {'upload':u['upload'],'download':u['download'],'used':u['upload']+u['download'],'total':u['total'],
+          'scope':'upstream-account','managed_count':0,'measured_count':0,'external_count':external,'external_measured_count':len(covered),
+          'unmeasured_count':0,'stale_count':int(u['stale']),'complete':True,'since':'','upstream_sources':upstream,'upstream_count':1,'expire':u.get('expire',0),
+          'note':'上游订阅账户共享用量，来自上游 Subscription-Userinfo；选择其中部分节点仍显示整个账户用量，不是面板独立计量。'}
     return {'upload':upload,'download':download,'used':upload+download,'total':subscription.get('traffic_limit_bytes',0),
+      'upstream_sources':upstream,'upstream_count':len(upstream),'external_measured_count':len(covered),
       'scope':'shared-node-port-aggregate','managed_count':len(ids),'measured_count':measured,'external_count':external,
-      'unmeasured_count':len(ids)-measured+external,'stale_count':stale,'complete':measured==len(ids) and not external and bool(ids),
+      'unmeasured_count':len(ids)-measured+external-len(covered),'stale_count':stale,'complete':measured==len(ids) and not external and bool(ids),
       'since':min(since) if since else '', 'note':'所选自建节点自启用采集以来的共享总量，包含其他订阅/连接；外部节点未计入，链路节点分别计数。额度仅作展示，不限制服务器转发。'}
+
+
+def usage(subscription,members=None,imported=None,plan=None):
+    from . import subscription_composition as composition
+    if not composition.references(subscription['id']):return _direct_usage(subscription,members,imported)
+    plan=composition.resolve(subscription) if plan is None else plan
+    breakdown=[];meters={};covered_accounts=set();unknown=False
+    for sid,(row,direct,external) in plan['origins'].items():
+        if not direct and not external:continue
+        u=_direct_usage(row,direct,external)
+        account_ids={x['source_id'] for x in u.get('upstream_sources',[])}
+        shared=bool(account_ids and account_ids<=covered_accounts and not u['managed_count'])
+        breakdown.append({'subscription_id':sid,'name':row['name'],'expires_at':row['expires_at'],'usage':u,'shared':shared})
+        covered_accounts.update(account_ids)
+        if u['managed_count']:
+            ids=frozenset(n['id'] for n in direct if eligible(n))
+            meters.setdefault(('local',ids),dict(u,upstream_sources=[],upstream_count=0))
+        for account in u.get('upstream_sources',[]):
+            meters.setdefault(('upstream',account['source_id']),{'upload':account['upload'],'download':account['download'],
+              'used':account['upload']+account['download'],'total':account['total'],'expire':account.get('expire',0),
+              'scope':'upstream-account','measured_count':0,'managed_count':0,'external_count':u['external_count'],
+              'stale_count':int(account['stale']),'complete':True,'upstream_sources':[account],'upstream_count':1,
+              'note':'上游账户共享用量；同一账户仅计算一次。'})
+        unknown|=bool(u['unmeasured_count'])
+    selected=None;selected_name='';sid=subscription.get('usage_source_id',0)
+    if sid:
+        active=next((r for r in plan['states'] if r['subscription_id']==sid and r['status']=='ok'),None)
+        if active:
+            source=get(sid);selected=usage(source);selected_name=active['name']
+            if selected['scope']=='composite':selected=selected.get('client_usage')
+            if selected and source['expires_at']:
+                expiry=int(datetime.fromisoformat(source['expires_at'].replace('Z','+00:00')).timestamp())
+                selected=dict(selected,expire=min(expiry,selected.get('expire') or expiry))
+    elif len(meters)==1 and not unknown:
+        selected=next(iter(meters.values()));selected_name='自动识别的唯一用量来源'
+    return {'scope':'composite','upload':0,'download':0,'used':0,'total':0,'measured_count':0,
+      'managed_count':sum(r[0]=='managed' for r in plan['members']),'external_count':sum(r[0]=='external' for r in plan['members']),
+      'complete':False,'stale_count':sum(u['stale_count'] for u in meters.values()),'unmeasured_count':int(unknown),
+      'breakdown':breakdown,'meter_count':len(meters),'client_usage':selected,'client_usage_name':selected_name,
+      'note':'按原订阅展示共享用量；不同来源的额度、周期与到期时间可能不同，不合并为一个总额。同一上游账户重复引用只计算一次。'}
 
 
 def usage_headers(subscription):
     u=usage(subscription);headers={'X-Traffic-Scope':u['scope'],'X-Traffic-Coverage':'complete' if u['complete'] else 'partial'}
+    if u['scope']=='composite':
+        u=u.get('client_usage') or {}
+        if not u:return headers
+        headers.update({'X-Traffic-Scope':u['scope'],'X-Traffic-Coverage':'complete' if u['complete'] else 'partial'})
     values=[]
-    if u['measured_count']:
+    if u['measured_count'] or u.get('scope')=='upstream-account':
         values=[f"upload={u['upload']}",f"download={u['download']}",f"total={u['total']}"]
     if subscription.get('expires_at'):
         values.append('expire='+str(int(datetime.fromisoformat(subscription['expires_at'].replace('Z','+00:00')).timestamp())))
+    if u.get('expire'):
+        values=[v for v in values if not v.startswith('expire=')]+['expire='+str(min(u['expire'],int(datetime.fromisoformat(subscription['expires_at'].replace('Z','+00:00')).timestamp())) if subscription.get('expires_at') else u['expire'])]
     if values:headers['Subscription-Userinfo']='; '.join(values)
     return headers
 
@@ -230,14 +318,14 @@ def parse_node(node, name):
 
 
 def render(subscription, fmt):
-    members = [n for n in member_nodes(subscription['id']) if eligible(n)]
-    members += [dict(n, share_link=n['uri'], remark=n['name'], source_kind='external')
-                for n in external_members(subscription['id']) if external_nodes.available(n)]
-    chains=proxy_chains.configured(subscription)
-    if chains and fmt in ('raw','base64'):raise HTTPException(409,'链式代理仅支持 Clash/Mihomo 或 sing-box 完整配置，普通节点链接和 Base64 无法保留链路关系')
-    available={('external' if n.get('source_kind')=='external' else 'managed',n['id']) for n in members}
-    problems=proxy_chains.errors(chains,available)
-    if problems:raise HTTPException(409,problems[0])
+    from . import subscription_health
+    from . import subscription_composition as composition
+    plan=composition.resolve(subscription)
+    members=[dict(n,source_kind=ref[0],share_link=n['uri'],remark=n['name']) if ref[0]=='external' else dict(n,source_kind='managed') for ref,n in plan['members'].items()]
+    chains=plan['chains']
+    if plan['has_chains'] and fmt in ('raw','base64'):raise HTTPException(409,'链式代理仅支持 Clash/Mihomo 或 sing-box 完整配置，普通节点链接和 Base64 无法保留链路关系')
+    if plan['has_chains'] and not chains and not plan['standalone']:raise HTTPException(409,'订阅链路均在故障隔离中，暂不可导出；不会自动绕过代理链')
+    if plan['errors']:raise HTTPException(409,plan['errors'][0])
     if not members:
         raise HTTPException(409, '订阅中暂无可导出节点')
     used = {'DIRECT', '节点选择', 'direct', 'proxy'}
@@ -263,9 +351,9 @@ def render(subscription, fmt):
         if fmt == 'base64':
             text = base64.b64encode(text.encode()).decode() + '\n'
         return text, 'text/plain', 'txt', len(parsed)
-    expanded,names=proxy_chains.expand(chains,parsed_by_ref,not bool(subscription.get('chain_only')))
+    expanded,names=proxy_chains.expand(chains,parsed_by_ref,plan['standalone'])
     count=len(names)
-    choices=names+([] if chains and subscription.get('chain_only') else ['DIRECT'])
+    choices=names+(['DIRECT'] if plan['standalone'] else [])
     if fmt == 'clash':
         data = {'mixed-port': 7890, 'allow-lan': False, 'mode': 'rule', 'log-level': 'info',
                 'proxies': proxy_chains.proxies(expanded,fmt),
@@ -275,7 +363,7 @@ def render(subscription, fmt):
     data = {'log': {'level': 'info'},
             'dns': {'servers': [{'type': 'https', 'tag': 'dns-direct', 'server': '1.1.1.1'}]},
             'inbounds': [{'type': 'mixed', 'tag': 'mixed-in', 'listen': '127.0.0.1', 'listen_port': 7890}],
-            'outbounds': [{'type': 'selector', 'tag': 'proxy', 'outbounds': names+([] if chains and subscription.get('chain_only') else ['direct']), 'default': names[0]}]
+            'outbounds': [{'type': 'selector', 'tag': 'proxy', 'outbounds': names+(['direct'] if plan['standalone'] else []), 'default': names[0]}]
                          + proxy_chains.proxies(expanded,fmt) + [{'type': 'direct', 'tag': 'direct'}],
             'route': {'final': 'proxy', 'auto_detect_interface': True,
                       'default_domain_resolver': {'server': 'dns-direct', 'strategy': 'prefer_ipv4'}}}
@@ -293,6 +381,8 @@ def register(app, require_login, public_url, secret):
     sources.register(app,owner)
     from . import media_unlock
     media_unlock.register(app,owner)
+    from . import subscription_health
+    subscription_health.register(app,owner)
 
     def response(subscription, fmt, download=False):
         text, media, ext, count = render(subscription, fmt)
@@ -322,10 +412,12 @@ def register(app, require_login, public_url, secret):
     @app.delete('/api/subscriptions/{subscription_id}')
     def delete_subscription(subscription_id: int, request: Request):
         owner(request)
-        get(subscription_id)
-        c = db.get_conn()
-        c.execute('DELETE FROM subscriptions WHERE id=?', (subscription_id,))
-        c.commit()
+        from . import agent
+        with agent.LOCK:
+            get(subscription_id)
+            c = db.get_conn()
+            c.execute('DELETE FROM subscriptions WHERE id=?', (subscription_id,))
+            c.commit()
         return {'ok': True}
 
     @app.post('/api/subscriptions/{subscription_id}/rotate')
@@ -370,18 +462,18 @@ def register(app, require_login, public_url, secret):
         from . import labels
         subscription=authorized(subscription_id,token)
         described=describe(subscription,public_url,secret)
-        cards=[]
-        if not described['chain_only']:
-            for n in member_nodes(subscription_id):
-                if not eligible(n):continue
+        from . import subscription_composition as composition
+        plan=composition.resolve(subscription);cards=[]
+        for ref,n in plan['members'].items():
+            if ref not in plan['standalone']:continue
+            if ref[0]=='managed':
                 n=labels.enrich(regions.enrich(n))
                 cards.append({'name':n.get('display_name',n['remark']),'protocol':urlsplit(n['share_link']).scheme,'group_name':n['group_name'],'tags':n['tags'],'kind':'managed'})
-            for n in external_members(subscription_id):
-                if not external_nodes.available(n):continue
+            else:
                 n=external_nodes.describe(n)
                 cards.append({'name':n.get('display_name',n['name']),'protocol':n['protocol'],'group_name':n['group_name'],'tags':n['tags'],'kind':'external'})
-        cards.extend({'name':chain['name'],'protocol':'chain','group_name':'链式代理','tags':[],'kind':'chain'} for chain in described['chains'])
-        return JSONResponse({k:described[k] for k in ('name','expires_at','formats','urls','usage','exportable_count','chain_errors')}|{'nodes':cards},
+        cards.extend({'name':chain['name'],'protocol':'chain','group_name':'链式代理','tags':[],'kind':'chain'} for chain in plan['chains'])
+        return JSONResponse({k:described[k] for k in ('name','expires_at','formats','urls','usage','exportable_count','chain_errors','source_subscriptions')}|{'nodes':cards},
             headers={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Robots-Tag':'noindex, nofollow'})
 
     @app.get('/subscribe/{subscription_id}/{token}')

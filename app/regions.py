@@ -57,9 +57,13 @@ def enrich(node,kind='managed'):
     if not db.get_conn().execute("SELECT 1 FROM sqlite_master WHERE name=?",(table,)).fetchone():r=None
     else:r=db.get_conn().execute(f'SELECT * FROM {table} WHERE node_id=?',(n['id'],)).fetchone()
     code=(r['manual_code'] if r and r['manual_code'] is not None else r['auto_code'] if r else '')
+    name=n.get('remark',n.get('name',''))
+    if kind=='managed':
+        from . import node_names
+        name=node_names.format_name(name,node_names.protocol(n),limit=77 if code and code!='ZZ' else 80)
     n.update(country_code=code,country_flag=flag(code),country_source='manual' if r and r['manual_code'] is not None else 'auto',
              country_auto=r['auto_code'] if r else '',country_ip=r['ip'] if r else '',country_checked=r['checked'] if r else 0,
-             display_name=display_name(n.get('remark',n.get('name','')),code))
+             display_name=display_name(name,code))
     return n
 
 

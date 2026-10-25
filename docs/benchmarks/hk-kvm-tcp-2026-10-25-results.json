@@ -1,0 +1,575 @@
+{
+  "date": "2026-10-25",
+  "host_alias": "HK-KVM trial",
+  "platform": {
+    "os": "Debian 13",
+    "kernel": "6.12.107+deb13-cloud-amd64",
+    "virtualization": "KVM",
+    "vcpus": 1,
+    "MemTotal_KiB": 470880,
+    "page_size": 4096,
+    "existing_services": [
+      "sing-box VLESS-WS",
+      "cloudflared fixed tunnel",
+      "WireGuard",
+      "existing monitor"
+    ]
+  },
+  "original": {
+    "cc": "bbr",
+    "qdisc": "fq",
+    "mtu": 1476,
+    "tcp_notsent_lowat": 131072,
+    "tcp_rmem": [
+      4096,
+      131072,
+      23152558
+    ],
+    "tcp_wmem": [
+      4096,
+      16384,
+      23152558
+    ],
+    "tcp_mem_pages": [
+      5178,
+      6906,
+      10356
+    ]
+  },
+  "rounds": [
+    {
+      "cohort": "notsent-v2",
+      "mode": "baseline",
+      "phase": "notsent-v2-1-baseline",
+      "tests": [
+        {
+          "kind": "up1",
+          "received_bytes": 33554432,
+          "duration_seconds": 2.149788,
+          "goodput_Mbps": 124.866,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 10.72083903659035,
+          "loaded_ping_avg_ms": 154.145
+        },
+        {
+          "kind": "down1",
+          "received_bytes": 33554432,
+          "duration_seconds": 6.001087,
+          "goodput_Mbps": 44.731,
+          "sender_retransmitted_segments": 2515,
+          "host_iperf_CPU_percent": 0.22424686217789666,
+          "loaded_ping_avg_ms": 150.34
+        },
+        {
+          "kind": "up4",
+          "received_bytes": 33947648,
+          "duration_seconds": 2.171316,
+          "goodput_Mbps": 125.077,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 19.161830942812813,
+          "loaded_ping_avg_ms": 150.318
+        },
+        {
+          "kind": "down4",
+          "received_bytes": 33947648,
+          "duration_seconds": 4.001122,
+          "goodput_Mbps": 67.876,
+          "sender_retransmitted_segments": 2549,
+          "host_iperf_CPU_percent": 0.5008836574198464,
+          "loaded_ping_avg_ms": 153.937
+        }
+      ],
+      "direct_CF_download_Mbps": 188.3,
+      "Argo_cold_download_Mbps": 17.866
+    },
+    {
+      "cohort": "notsent-v2",
+      "mode": "notsent",
+      "phase": "notsent-v2-2-notsent",
+      "tests": [
+        {
+          "kind": "up1",
+          "received_bytes": 33554432,
+          "duration_seconds": 2.151804,
+          "goodput_Mbps": 124.749,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 14.571624663807306,
+          "loaded_ping_avg_ms": 153.955
+        },
+        {
+          "kind": "down1",
+          "received_bytes": 33554432,
+          "duration_seconds": 6.001093,
+          "goodput_Mbps": 44.731,
+          "sender_retransmitted_segments": 2512,
+          "host_iperf_CPU_percent": 0.21730000652748138,
+          "loaded_ping_avg_ms": 150.326
+        },
+        {
+          "kind": "up4",
+          "received_bytes": 34078720,
+          "duration_seconds": 2.166168,
+          "goodput_Mbps": 125.858,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 24.97011320744862,
+          "loaded_ping_avg_ms": 150.427
+        },
+        {
+          "kind": "down4",
+          "received_bytes": 33947648,
+          "duration_seconds": 4.001133,
+          "goodput_Mbps": 67.876,
+          "sender_retransmitted_segments": 9346,
+          "host_iperf_CPU_percent": 0.4355917905237933,
+          "loaded_ping_avg_ms": 154.028
+        }
+      ],
+      "direct_CF_download_Mbps": 212.424,
+      "Argo_cold_download_Mbps": 18.103
+    },
+    {
+      "cohort": "notsent-v2",
+      "mode": "notsent",
+      "phase": "notsent-v2-3-notsent",
+      "tests": [
+        {
+          "kind": "up1",
+          "received_bytes": 33554432,
+          "duration_seconds": 2.149438,
+          "goodput_Mbps": 124.886,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 14.309670961204176,
+          "loaded_ping_avg_ms": 153.958
+        },
+        {
+          "kind": "down1",
+          "received_bytes": 33554432,
+          "duration_seconds": 6.001098,
+          "goodput_Mbps": 44.731,
+          "sender_retransmitted_segments": 4180,
+          "host_iperf_CPU_percent": 0.20273744935972635,
+          "loaded_ping_avg_ms": 150.369
+        },
+        {
+          "kind": "up4",
+          "received_bytes": 33947648,
+          "duration_seconds": 2.176381,
+          "goodput_Mbps": 124.786,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 21.773962058207825,
+          "loaded_ping_avg_ms": 150.289
+        },
+        {
+          "kind": "down4",
+          "received_bytes": 33947648,
+          "duration_seconds": 4.001128,
+          "goodput_Mbps": 67.876,
+          "sender_retransmitted_segments": 6064,
+          "host_iperf_CPU_percent": 0.48363095975330367,
+          "loaded_ping_avg_ms": 153.941
+        }
+      ],
+      "direct_CF_download_Mbps": 209.328,
+      "Argo_cold_download_Mbps": 18.83
+    },
+    {
+      "cohort": "notsent-v2",
+      "mode": "baseline",
+      "phase": "notsent-v2-4-baseline",
+      "tests": [
+        {
+          "kind": "up1",
+          "received_bytes": 33554432,
+          "duration_seconds": 2.151751,
+          "goodput_Mbps": 124.752,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 11.047234462327685,
+          "loaded_ping_avg_ms": 153.897
+        },
+        {
+          "kind": "down1",
+          "received_bytes": 33554432,
+          "duration_seconds": 6.001066,
+          "goodput_Mbps": 44.731,
+          "sender_retransmitted_segments": 6659,
+          "host_iperf_CPU_percent": 0.19723737228792923,
+          "loaded_ping_avg_ms": 150.314
+        },
+        {
+          "kind": "up4",
+          "received_bytes": 33947648,
+          "duration_seconds": 2.169923,
+          "goodput_Mbps": 125.157,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 19.462792713807815,
+          "loaded_ping_avg_ms": 150.335
+        },
+        {
+          "kind": "down4",
+          "received_bytes": 33947648,
+          "duration_seconds": 5.001136,
+          "goodput_Mbps": 54.304,
+          "sender_retransmitted_segments": 2531,
+          "host_iperf_CPU_percent": 0.4170013207902822,
+          "loaded_ping_avg_ms": 153.958
+        }
+      ],
+      "direct_CF_download_Mbps": 195.507,
+      "Argo_cold_download_Mbps": 18.974
+    },
+    {
+      "cohort": "notsent-v2",
+      "mode": "baseline",
+      "phase": "notsent-v2-5-baseline",
+      "tests": [
+        {
+          "kind": "up1",
+          "received_bytes": 33423360,
+          "duration_seconds": 2.151085,
+          "goodput_Mbps": 124.303,
+          "sender_retransmitted_segments": 3,
+          "host_iperf_CPU_percent": 2.755591835607379,
+          "loaded_ping_avg_ms": 153.925
+        },
+        {
+          "kind": "down1",
+          "received_bytes": 33554432,
+          "duration_seconds": 33.001094,
+          "goodput_Mbps": 8.134,
+          "sender_retransmitted_segments": 2450,
+          "host_iperf_CPU_percent": 0.11345777439773447,
+          "loaded_ping_avg_ms": 150.309
+        },
+        {
+          "kind": "up4",
+          "received_bytes": 33947648,
+          "duration_seconds": 2.177563,
+          "goodput_Mbps": 124.718,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 19.449208725683786,
+          "loaded_ping_avg_ms": 151.329
+        },
+        {
+          "kind": "down4",
+          "received_bytes": 34209792,
+          "duration_seconds": 4.001137,
+          "goodput_Mbps": 68.4,
+          "sender_retransmitted_segments": 4983,
+          "host_iperf_CPU_percent": 0.45746858163794774,
+          "loaded_ping_avg_ms": 153.971
+        }
+      ],
+      "direct_CF_download_Mbps": 150.9,
+      "Argo_cold_download_Mbps": 18.734
+    },
+    {
+      "cohort": "notsent-v2",
+      "mode": "notsent",
+      "phase": "notsent-v2-6-notsent",
+      "tests": [
+        {
+          "kind": "up1",
+          "received_bytes": 33554432,
+          "duration_seconds": 2.148922,
+          "goodput_Mbps": 124.916,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 12.710534659484079,
+          "loaded_ping_avg_ms": 153.965
+        },
+        {
+          "kind": "down1",
+          "received_bytes": 33554432,
+          "duration_seconds": 6.001075,
+          "goodput_Mbps": 44.731,
+          "sender_retransmitted_segments": 3073,
+          "host_iperf_CPU_percent": 0.21044154773574242,
+          "loaded_ping_avg_ms": 150.326
+        },
+        {
+          "kind": "up4",
+          "received_bytes": 33947648,
+          "duration_seconds": 2.178204,
+          "goodput_Mbps": 124.681,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 24.044713947972188,
+          "loaded_ping_avg_ms": 150.344
+        },
+        {
+          "kind": "down4",
+          "received_bytes": 33947648,
+          "duration_seconds": 4.000366,
+          "goodput_Mbps": 67.889,
+          "sender_retransmitted_segments": 7650,
+          "host_iperf_CPU_percent": 0.43435090413787913,
+          "loaded_ping_avg_ms": 154.094
+        }
+      ],
+      "direct_CF_download_Mbps": 208.168,
+      "Argo_cold_download_Mbps": 18.274
+    },
+    {
+      "cohort": "buffers",
+      "mode": "buffers",
+      "phase": "buffers-1-buffers",
+      "tests": [
+        {
+          "kind": "up1",
+          "received_bytes": 33423360,
+          "duration_seconds": 2.148792,
+          "goodput_Mbps": 124.436,
+          "sender_retransmitted_segments": 3,
+          "host_iperf_CPU_percent": 3.5724558166147573,
+          "loaded_ping_avg_ms": 153.92
+        },
+        {
+          "kind": "down1",
+          "received_bytes": 33554432,
+          "duration_seconds": 7.001054,
+          "goodput_Mbps": 38.342,
+          "sender_retransmitted_segments": 2522,
+          "host_iperf_CPU_percent": 0.2197318836428478,
+          "loaded_ping_avg_ms": 150.268
+        },
+        {
+          "kind": "up4",
+          "received_bytes": 33947648,
+          "duration_seconds": 2.167229,
+          "goodput_Mbps": 125.313,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 19.25449126110809,
+          "loaded_ping_avg_ms": 150.299
+        },
+        {
+          "kind": "down4",
+          "received_bytes": 34209792,
+          "duration_seconds": 4.001115,
+          "goodput_Mbps": 68.401,
+          "sender_retransmitted_segments": 3442,
+          "host_iperf_CPU_percent": 0.422624537148586,
+          "loaded_ping_avg_ms": 153.943
+        }
+      ],
+      "direct_CF_download_Mbps": 211.311,
+      "Argo_cold_download_Mbps": 19.088
+    },
+    {
+      "cohort": "buffers",
+      "mode": "baseline",
+      "phase": "buffers-2-baseline",
+      "tests": [
+        {
+          "kind": "up1",
+          "received_bytes": 33554432,
+          "duration_seconds": 2.150541,
+          "goodput_Mbps": 124.822,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 11.209362478199715,
+          "loaded_ping_avg_ms": 153.975
+        },
+        {
+          "kind": "down1",
+          "received_bytes": 33554432,
+          "duration_seconds": 12.001088,
+          "goodput_Mbps": 22.368,
+          "sender_retransmitted_segments": 2565,
+          "host_iperf_CPU_percent": 0.1533613143504448,
+          "loaded_ping_avg_ms": 150.333
+        },
+        {
+          "kind": "up4",
+          "received_bytes": 34078720,
+          "duration_seconds": 2.174334,
+          "goodput_Mbps": 125.385,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 18.610773368823892,
+          "loaded_ping_avg_ms": 150.303
+        },
+        {
+          "kind": "down4",
+          "received_bytes": 33947648,
+          "duration_seconds": 4.000177,
+          "goodput_Mbps": 67.892,
+          "sender_retransmitted_segments": 5134,
+          "host_iperf_CPU_percent": 0.433574997221307,
+          "loaded_ping_avg_ms": 153.96
+        }
+      ],
+      "direct_CF_download_Mbps": 207.075,
+      "Argo_cold_download_Mbps": 18.337
+    },
+    {
+      "cohort": "buffers",
+      "mode": "buffers",
+      "phase": "buffers-3-buffers",
+      "tests": [
+        {
+          "kind": "up1",
+          "received_bytes": 33554432,
+          "duration_seconds": 2.15421,
+          "goodput_Mbps": 124.61,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 10.284100297819194,
+          "loaded_ping_avg_ms": 153.978
+        },
+        {
+          "kind": "down1",
+          "received_bytes": 33554432,
+          "duration_seconds": 7.001106,
+          "goodput_Mbps": 38.342,
+          "sender_retransmitted_segments": 2548,
+          "host_iperf_CPU_percent": 0.19671250328597506,
+          "loaded_ping_avg_ms": 150.3
+        },
+        {
+          "kind": "up4",
+          "received_bytes": 34078720,
+          "duration_seconds": 2.17372,
+          "goodput_Mbps": 125.421,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 20.111132472139364,
+          "loaded_ping_avg_ms": 150.332
+        },
+        {
+          "kind": "down4",
+          "received_bytes": 33947648,
+          "duration_seconds": 4.001122,
+          "goodput_Mbps": 67.876,
+          "sender_retransmitted_segments": 8736,
+          "host_iperf_CPU_percent": 0.4482818008872595,
+          "loaded_ping_avg_ms": 153.951
+        }
+      ],
+      "direct_CF_download_Mbps": 206.134,
+      "Argo_cold_download_Mbps": 18.687
+    }
+  ],
+  "extra_tests": [
+    {
+      "name": "bbr100",
+      "received_bytes": 17301504,
+      "duration_seconds": 4.000273,
+      "goodput_Mbps": 34.601,
+      "sender_retransmitted_segments": 2933,
+      "host_iperf_CPU_percent": 0.1797037455394963
+    },
+    {
+      "name": "cubic100",
+      "received_bytes": 131072,
+      "duration_seconds": 4.001067,
+      "goodput_Mbps": 0.262,
+      "sender_retransmitted_segments": 13,
+      "host_iperf_CPU_percent": 0.08589389306395383
+    },
+    {
+      "name": "bbr300",
+      "received_bytes": 15859712,
+      "duration_seconds": 4.001339,
+      "goodput_Mbps": 31.709,
+      "sender_retransmitted_segments": 7638,
+      "host_iperf_CPU_percent": 0.1708223181556473
+    },
+    {
+      "name": "long-up",
+      "received_bytes": 100663296,
+      "duration_seconds": 3.151295,
+      "goodput_Mbps": 255.548,
+      "sender_retransmitted_segments": 8501,
+      "host_iperf_CPU_percent": 3.342933478492712
+    },
+    {
+      "name": "pacing-300",
+      "received_bytes": 100663296,
+      "duration_seconds": 5.151867,
+      "goodput_Mbps": 156.314,
+      "sender_retransmitted_segments": 1,
+      "host_iperf_CPU_percent": 16.727579631370187
+    },
+    {
+      "name": "pacing-350",
+      "received_bytes": 100663296,
+      "duration_seconds": 4.160646,
+      "goodput_Mbps": 193.553,
+      "sender_retransmitted_segments": 0,
+      "host_iperf_CPU_percent": 11.790616734557826
+    }
+  ],
+  "cubic_fixed_bytes_check": [
+    {
+      "kind": "up1",
+      "error": null,
+      "received_bytes": 33554432,
+      "seconds": 2.148638,
+      "goodput_Mbps": 124.933
+    },
+    {
+      "kind": "down1",
+      "error": "interrupt - the client has terminated",
+      "received_bytes": 1179648,
+      "seconds": 44.261594,
+      "goodput_Mbps": 0.213
+    }
+  ],
+  "Argo_connection_reuse": {
+    "status": 0,
+    "requests": [
+      {
+        "http_code": 200,
+        "size_download": 4194304,
+        "time_total": 1.859015,
+        "time_starttransfer": 0.88859,
+        "speed_download": 2256196,
+        "num_connects": 1
+      },
+      {
+        "http_code": 200,
+        "size_download": 4194304,
+        "time_total": 0.344812,
+        "time_starttransfer": 0.185299,
+        "speed_download": 12164031,
+        "num_connects": 0
+      },
+      {
+        "http_code": 200,
+        "size_download": 4194304,
+        "time_total": 0.307335,
+        "time_starttransfer": 0.185009,
+        "speed_download": 13647335,
+        "num_connects": 0
+      },
+      {
+        "http_code": 200,
+        "size_download": 4194304,
+        "time_total": 0.314954,
+        "time_starttransfer": 0.190934,
+        "speed_download": 13317195,
+        "num_connects": 0
+      }
+    ]
+  },
+  "resources": {
+    "samples": 753,
+    "min_MemAvailable_MiB": 277.27,
+    "peak_TCP_socket_memory_MiB": 21.54,
+    "peak_core_and_tunnel_RSS_MiB": 65.51
+  },
+  "observed_interface_rx_plus_tx_bytes": 1986615789,
+  "observed_interface_rx_plus_tx_GiB": 1.85,
+  "verification": {
+    "local_disconnect_timeout_rollback": true,
+    "original_sysctls_restored": true,
+    "existing_sysctl_file_hash_unchanged": true,
+    "qdisc_route_MTU_unchanged": true,
+    "existing_core_and_tunnel_processes_unchanged": true,
+    "recent_OOM_log_matches": 0,
+    "temporary_listener_firewall_and_node_helpers_removed": true
+  },
+  "limitations": [
+    "One long-distance controlled IPv4 peer; not a provider-wide bandwidth measurement",
+    "Different request sizes cannot be compared directly as link capacity",
+    "Four baseline rounds across two cohorts; assess within each cohort",
+    "CUBIC reverse fixed-byte transfer timed out and is recorded as incomplete",
+    "Pacing rates are per test socket, not whole-host shaping; one sample per rate",
+    "No kernel upgrade, BBR3 installation, MTU change, WireGuard throughput test, IPv6 throughput test, or Hysteria2 installation",
+    "Interface counter delta includes normal traffic and test overhead, excludes the initial pre-guard preflight and final functional check"
+  ]
+}

@@ -14,7 +14,7 @@ form.addEventListener("submit", async event => {
     });
     const data = await response.json();
     if (!response.ok || !data.ok) throw Error(data.detail || "登录失败");
-    location.href = "/static/index.html";
+    location.href = new URLSearchParams(location.search).get("next") === "/monitor" ? "/monitor" : "/static/index.html";
   } catch (exception) {
     error.textContent = exception.message;
     error.hidden = false;

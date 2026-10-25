@@ -16,12 +16,13 @@ jobs:
           docker run --rm auto-argo-node:test python -m compileall -q app
           sh -n app/node-agent.sh app/node-uninstall.sh scripts/fetch-installer.sh
           bash -n app/node-repair.sh app/port-update.sh
-          node --check app/static/deploy-ui.js
-          node --check app/static/subscriptions.js
+          for script in app/static/*.js; do node --check "$script"; done
+      - name: Prepare shell test dependencies
+        run: docker build -f tests/Dockerfile -t auto-argo-node:test-runtime .
       - name: Run isolated backend and HTTP tests
         run: >-
           docker run --rm
           -v "$PWD/tests:/app/tests:ro"
           -e PYTHONPATH=/app:/app/tests
-          auto-argo-node:test
+          auto-argo-node:test-runtime
           python -m unittest discover -s tests -p 'test_*.py' -v

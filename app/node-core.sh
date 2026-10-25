@@ -7,13 +7,18 @@ _panel_install_core() {
  mkdir -p /var/tmp /usr/local/bin "$SINGBOX_DIR" || return 1
  tmp=$(mktemp -d /var/tmp/argo-core.XXXXXXXX) || return 1
  if ! curl -fsS --connect-timeout 10 --max-time 30 "$ARGO_PANEL/agent/releases/manifest.json" -o "$tmp/manifest";then rm -rf "$tmp";return 1;fi
+ if [ -n "${ARGO_RELEASE_SHA256:-}" ];then
+  printf '%s  %s\n' "$ARGO_RELEASE_SHA256" "$tmp/manifest" | sha256sum -c - || { rm -rf "$tmp";return 1; }
+ fi
  name="sing-box-${channel}-${arch}"
  if [ "$requested" != latest ];then
   case "$requested" in 1.13.21) name="sing-box-${channel}-${requested}-${arch}";; *) rm -rf "$tmp";return 1;;esac
  fi
  expected=$(jq -er --arg n "$name" '.files[$n].sha256 | select(test("^[a-f0-9]{64}$"))' "$tmp/manifest") || { rm -rf "$tmp";return 1; }
  version=$(jq -er --arg name "$name" '.files[$name].version // .core_version' "$tmp/manifest") || { rm -rf "$tmp";return 1; }
- if ! curl -fsS --retry 2 --connect-timeout 10 --max-time 300 "$ARGO_PANEL/agent/releases/$name" -o "$tmp/core";then rm -rf "$tmp";return 1;fi
+ if [ -x "$SINGBOX_BIN" ] && printf '%s  %s\n' "$expected" "$SINGBOX_BIN" | sha256sum -c - >/dev/null 2>&1;then
+  cp "$SINGBOX_BIN" "$tmp/core" || { rm -rf "$tmp";return 1; }
+ elif ! curl -fsS --retry 2 --connect-timeout 10 --max-time 300 "$ARGO_PANEL/agent/releases/$name" -o "$tmp/core";then rm -rf "$tmp";return 1;fi
  if ! printf '%s  %s\n' "$expected" "$tmp/core" | sha256sum -c -;then rm -rf "$tmp";return 1;fi
  chmod 755 "$tmp/core"
  [ "$("$tmp/core" version | awk '/^sing-box version/{print $3}')" = "$version" ] || { rm -rf "$tmp";return 1; }

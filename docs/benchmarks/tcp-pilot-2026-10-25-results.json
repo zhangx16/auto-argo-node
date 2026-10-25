@@ -1,0 +1,2609 @@
+{
+  "date": "2026-10-25",
+  "scope": "Two Alpine LXC containers; no independent-kernel or Hysteria2 trial",
+  "baseline": "Existing BBR + noqueue; original socket buffers",
+  "candidate": "Existing BBR + fq limit 1024 flow_limit 100; original socket buffers",
+  "first_round_sequence": [
+    "A",
+    "B",
+    "B",
+    "A",
+    "A",
+    "B"
+  ],
+  "nodes": [
+    {
+      "sequence": [
+        "A",
+        "B",
+        "B",
+        "A",
+        "A",
+        "B"
+      ],
+      "name": "US-4837",
+      "protocol": "Reality Vision",
+      "container_memory_MiB": 244.14,
+      "endpoint": "Panel-owned HTTPS static files",
+      "download_sample_MiB": 16,
+      "parallel_streams": 4,
+      "parallel_sample_MiB_per_stream": 4,
+      "upload_sample_MiB": null,
+      "modes": {
+        "baseline": {
+          "download": {
+            "unit": "Mbps",
+            "median": 275.02,
+            "min": 270.25,
+            "max": 291.41,
+            "count": 3
+          },
+          "parallel_download": {
+            "unit": "Mbps",
+            "median": 277.18,
+            "min": 273.02,
+            "max": 289.75,
+            "count": 3
+          },
+          "latency": {
+            "unit": "ms",
+            "median": 130.01,
+            "min": 119.52,
+            "max": 147.87,
+            "count": 6
+          },
+          "loaded_latency": {
+            "unit": "ms",
+            "median": 125.95,
+            "min": 106.05,
+            "max": 145.86,
+            "count": 2
+          },
+          "resources": {
+            "samples": 10,
+            "peak_cgroup_memory_MiB": 40.11,
+            "peak_cgroup_socket_memory_MiB": 0.8,
+            "peak_core_and_tunnel_RSS_MiB": 22.3,
+            "oom_kill_counter_values": [
+              0
+            ]
+          },
+          "tcp_window_counters": {
+            "retrans_segments": 232,
+            "out_segments": 85857,
+            "retrans_out_percent": 0.27,
+            "includes_background_traffic": true
+          }
+        },
+        "candidate": {
+          "download": {
+            "unit": "Mbps",
+            "median": 247.18,
+            "min": 245.48,
+            "max": 249.98,
+            "count": 3
+          },
+          "parallel_download": {
+            "unit": "Mbps",
+            "median": 271.49,
+            "min": 251.09,
+            "max": 281.99,
+            "count": 3
+          },
+          "latency": {
+            "unit": "ms",
+            "median": 129.66,
+            "min": 107.61,
+            "max": 152.71,
+            "count": 6
+          },
+          "loaded_latency": {
+            "unit": "ms",
+            "median": 143.3,
+            "min": 108.59,
+            "max": 148.03,
+            "count": 3
+          },
+          "resources": {
+            "samples": 9,
+            "peak_cgroup_memory_MiB": 45.31,
+            "peak_cgroup_socket_memory_MiB": 6.17,
+            "peak_core_and_tunnel_RSS_MiB": 22.34,
+            "oom_kill_counter_values": [
+              0
+            ]
+          },
+          "tcp_window_counters": {
+            "retrans_segments": 270,
+            "out_segments": 82449,
+            "retrans_out_percent": 0.327,
+            "includes_background_traffic": true
+          }
+        }
+      },
+      "runs": [
+        {
+          "phase": "1-baseline",
+          "at": 1792902170,
+          "retransmitted_segments_delta": 84,
+          "out_segments_delta": 28506,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.133267,
+              "time_starttransfer": 0.133185,
+              "speed_download": 82,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.132265,
+              "time_starttransfer": 0.132196,
+              "speed_download": 83,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 16777216,
+              "size_upload": 0,
+              "time_total": 0.460574,
+              "time_starttransfer": 0.136639,
+              "speed_download": 36426754,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 16777216,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 0.4632166773080826,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.407162,
+                  "time_starttransfer": 0.142228,
+                  "speed_download": 10301314,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.445178,
+                  "time_starttransfer": 0.156278,
+                  "speed_download": 9421633,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.446988,
+                  "time_starttransfer": 0.142883,
+                  "speed_download": 9383482,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.43772,
+                  "time_starttransfer": 0.149068,
+                  "speed_download": 9582162,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "2-candidate",
+          "at": 1792902173,
+          "retransmitted_segments_delta": 26,
+          "out_segments_delta": 26684,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.13887,
+              "time_starttransfer": 0.138805,
+              "speed_download": 79,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.152713,
+              "time_starttransfer": 0.152632,
+              "speed_download": 72,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 16777216,
+              "size_upload": 0,
+              "time_total": 0.536909,
+              "time_starttransfer": 0.147615,
+              "speed_download": 31247783,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 16777216,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.148035,
+              "time_starttransfer": 0.147957,
+              "speed_download": 74,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 0.4759632460772991,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.455679,
+                  "time_starttransfer": 0.151449,
+                  "speed_download": 9204514,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.442488,
+                  "time_starttransfer": 0.142707,
+                  "speed_download": 9478910,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.450529,
+                  "time_starttransfer": 0.143707,
+                  "speed_download": 9309731,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.461442,
+                  "time_starttransfer": 0.150156,
+                  "speed_download": 9089558,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "3-candidate",
+          "at": 1792902176,
+          "retransmitted_segments_delta": 60,
+          "out_segments_delta": 27277,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.13127,
+              "time_starttransfer": 0.131162,
+              "speed_download": 83,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.128041,
+              "time_starttransfer": 0.127975,
+              "speed_download": 85,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 16777216,
+              "size_upload": 0,
+              "time_total": 0.542991,
+              "time_starttransfer": 0.17379,
+              "speed_download": 30897779,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 16777216,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.143295,
+              "time_starttransfer": 0.143207,
+              "speed_download": 76,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 0.4943755753338337,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.445322,
+                  "time_starttransfer": 0.150487,
+                  "speed_download": 9418586,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.473289,
+                  "time_starttransfer": 0.153348,
+                  "speed_download": 8862035,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.471947,
+                  "time_starttransfer": 0.152867,
+                  "speed_download": 8887235,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.457355,
+                  "time_starttransfer": 0.153133,
+                  "speed_download": 9170784,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "4-baseline",
+          "at": 1792902180,
+          "retransmitted_segments_delta": 46,
+          "out_segments_delta": 27521,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.127751,
+              "time_starttransfer": 0.127673,
+              "speed_download": 86,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.147865,
+              "time_starttransfer": 0.147789,
+              "speed_download": 74,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 16777216,
+              "size_upload": 0,
+              "time_total": 0.496635,
+              "time_starttransfer": 0.141641,
+              "speed_download": 33781783,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 16777216,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.145861,
+              "time_starttransfer": 0.145799,
+              "speed_download": 75,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 0.4916096832603216,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.461038,
+                  "time_starttransfer": 0.140012,
+                  "speed_download": 9097523,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.476834,
+                  "time_starttransfer": 0.144229,
+                  "speed_download": 8796151,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.415872,
+                  "time_starttransfer": 0.139128,
+                  "speed_download": 10085564,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.471752,
+                  "time_starttransfer": 0.145322,
+                  "speed_download": 8890908,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "5-baseline",
+          "at": 1792902183,
+          "retransmitted_segments_delta": 102,
+          "out_segments_delta": 29830,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.123596,
+              "time_starttransfer": 0.12354,
+              "speed_download": 88,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.119521,
+              "time_starttransfer": 0.11935,
+              "speed_download": 92,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 16777216,
+              "size_upload": 0,
+              "time_total": 0.488024,
+              "time_starttransfer": 0.129382,
+              "speed_download": 34377850,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 16777216,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.106048,
+              "time_starttransfer": 0.105939,
+              "speed_download": 103,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 0.48422492295503616,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.468815,
+                  "time_starttransfer": 0.132443,
+                  "speed_download": 8946607,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.445707,
+                  "time_starttransfer": 0.130738,
+                  "speed_download": 9410451,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.458106,
+                  "time_starttransfer": 0.125152,
+                  "speed_download": 9155749,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.463346,
+                  "time_starttransfer": 0.131501,
+                  "speed_download": 9052207,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "6-candidate",
+          "at": 1792902186,
+          "retransmitted_segments_delta": 184,
+          "out_segments_delta": 28488,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.109265,
+              "time_starttransfer": 0.109184,
+              "speed_download": 100,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.107607,
+              "time_starttransfer": 0.107533,
+              "speed_download": 102,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 16777216,
+              "size_upload": 0,
+              "time_total": 0.546757,
+              "time_starttransfer": 0.14594,
+              "speed_download": 30684958,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 16777216,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 11,
+              "size_upload": 0,
+              "time_total": 0.108587,
+              "time_starttransfer": 0.108525,
+              "speed_download": 101,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 0.5345418490469456,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.515782,
+                  "time_starttransfer": 0.132307,
+                  "speed_download": 8131931,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.432358,
+                  "time_starttransfer": 0.122471,
+                  "speed_download": 9700997,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.436324,
+                  "time_starttransfer": 0.120489,
+                  "speed_download": 9612819,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 0.418921,
+                  "time_starttransfer": 0.122731,
+                  "speed_download": 10012159,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "observed_interface_rx_tx_delta_MiB": 397.82,
+      "payload_MiB": 192.00017833709717
+    },
+    {
+      "sequence": [
+        "A",
+        "B",
+        "B",
+        "A",
+        "A",
+        "B",
+        "B",
+        "A",
+        "A",
+        "B"
+      ],
+      "name": "HK-Lumen",
+      "protocol": "VLESS-WS + Argo HTTP/2",
+      "container_memory_MiB": 256.0,
+      "endpoint": "Cloudflare official speedtest API",
+      "download_sample_MiB": 4,
+      "parallel_streams": 4,
+      "parallel_sample_MiB_per_stream": 4,
+      "upload_sample_MiB": 8,
+      "modes": {
+        "baseline": {
+          "download": {
+            "unit": "Mbps",
+            "median": 18.33,
+            "min": 18.15,
+            "max": 19.21,
+            "count": 5
+          },
+          "upload": {
+            "unit": "Mbps",
+            "median": 34.7,
+            "min": 33.9,
+            "max": 35.73,
+            "count": 5
+          },
+          "parallel_download": {
+            "unit": "Mbps",
+            "median": 71.58,
+            "min": 70.74,
+            "max": 72.67,
+            "count": 5
+          },
+          "latency": {
+            "unit": "ms",
+            "median": 874.45,
+            "min": 845.94,
+            "max": 964.02,
+            "count": 10
+          },
+          "loaded_latency": {
+            "unit": "ms",
+            "median": 877.21,
+            "min": 829.01,
+            "max": 930.22,
+            "count": 15
+          },
+          "resources": {
+            "samples": 68,
+            "peak_cgroup_memory_MiB": 85.31,
+            "peak_cgroup_socket_memory_MiB": 1.48,
+            "peak_core_and_tunnel_RSS_MiB": 52.92,
+            "oom_kill_counter_values": [
+              0
+            ]
+          },
+          "tcp_window_counters": {
+            "retrans_segments": 5026,
+            "out_segments": 144800,
+            "retrans_out_percent": 3.471,
+            "includes_background_traffic": true
+          }
+        },
+        "candidate": {
+          "download": {
+            "unit": "Mbps",
+            "median": 18.28,
+            "min": 18.2,
+            "max": 19.28,
+            "count": 5
+          },
+          "upload": {
+            "unit": "Mbps",
+            "median": 34.04,
+            "min": 33.98,
+            "max": 35.34,
+            "count": 5
+          },
+          "parallel_download": {
+            "unit": "Mbps",
+            "median": 70.97,
+            "min": 70.07,
+            "max": 71.36,
+            "count": 5
+          },
+          "latency": {
+            "unit": "ms",
+            "median": 870.93,
+            "min": 834.09,
+            "max": 919.6,
+            "count": 10
+          },
+          "loaded_latency": {
+            "unit": "ms",
+            "median": 880.19,
+            "min": 830.32,
+            "max": 900.63,
+            "count": 15
+          },
+          "resources": {
+            "samples": 70,
+            "peak_cgroup_memory_MiB": 84.93,
+            "peak_cgroup_socket_memory_MiB": 1.01,
+            "peak_core_and_tunnel_RSS_MiB": 52.93,
+            "oom_kill_counter_values": [
+              0
+            ]
+          },
+          "tcp_window_counters": {
+            "retrans_segments": 2528,
+            "out_segments": 143846,
+            "retrans_out_percent": 1.757,
+            "includes_background_traffic": true
+          }
+        }
+      },
+      "runs": [
+        {
+          "phase": "1-baseline",
+          "at": 1792902198,
+          "retransmitted_segments_delta": 416,
+          "out_segments_delta": 28633,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.90321,
+              "time_starttransfer": 0.903168,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.96402,
+              "time_starttransfer": 0.963987,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 4194304,
+              "size_upload": 0,
+              "time_total": 1.770378,
+              "time_starttransfer": 0.845796,
+              "speed_download": 2369157,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 4194304,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.886593,
+              "time_starttransfer": 0.886562,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 8388608,
+              "time_total": 1.933949,
+              "time_starttransfer": 1.933908,
+              "speed_download": 0,
+              "speed_upload": 4337553,
+              "kind": "upload",
+              "bytes": 8388608,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.93022,
+              "time_starttransfer": 0.930181,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.84811,
+              "time_starttransfer": 0.848074,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 1.8751835580915213,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.851985,
+                  "time_starttransfer": 0.887484,
+                  "speed_download": 2264761,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.750711,
+                  "time_starttransfer": 0.82995,
+                  "speed_download": 2395771,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.779494,
+                  "time_starttransfer": 0.853206,
+                  "speed_download": 2357020,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.859357,
+                  "time_starttransfer": 0.885055,
+                  "speed_download": 2255781,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "2-candidate",
+          "at": 1792902212,
+          "retransmitted_segments_delta": 1,
+          "out_segments_delta": 28171,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.844741,
+              "time_starttransfer": 0.844707,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.890938,
+              "time_starttransfer": 0.890896,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 4194304,
+              "size_upload": 0,
+              "time_total": 1.843708,
+              "time_starttransfer": 0.868358,
+              "speed_download": 2274928,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 4194304,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.892088,
+              "time_starttransfer": 0.892056,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 8388608,
+              "time_total": 1.97512,
+              "time_starttransfer": 1.975085,
+              "speed_download": 0,
+              "speed_upload": 4247138,
+              "kind": "upload",
+              "bytes": 8388608,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.8386,
+              "time_starttransfer": 0.838568,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.860608,
+              "time_starttransfer": 0.860567,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 1.8912083487957716,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.874139,
+                  "time_starttransfer": 0.901966,
+                  "speed_download": 2237989,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.83466,
+                  "time_starttransfer": 0.871624,
+                  "speed_download": 2286147,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.777075,
+                  "time_starttransfer": 0.866504,
+                  "speed_download": 2360229,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.740723,
+                  "time_starttransfer": 0.819598,
+                  "speed_download": 2409518,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "3-candidate",
+          "at": 1792902226,
+          "retransmitted_segments_delta": 412,
+          "out_segments_delta": 28750,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.901133,
+              "time_starttransfer": 0.901102,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.860477,
+              "time_starttransfer": 0.860445,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 4194304,
+              "size_upload": 0,
+              "time_total": 1.835874,
+              "time_starttransfer": 0.872447,
+              "speed_download": 2284636,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 4194304,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.861562,
+              "time_starttransfer": 0.861523,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 8388608,
+              "time_total": 1.898864,
+              "time_starttransfer": 1.898827,
+              "speed_download": 0,
+              "speed_upload": 4417698,
+              "kind": "upload",
+              "bytes": 8388608,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.900632,
+              "time_starttransfer": 0.900592,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.890215,
+              "time_starttransfer": 0.890111,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 1.8809133432805538,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.758461,
+                  "time_starttransfer": 0.838424,
+                  "speed_download": 2385212,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.844541,
+                  "time_starttransfer": 0.878323,
+                  "speed_download": 2273901,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.863637,
+                  "time_starttransfer": 0.891381,
+                  "speed_download": 2250601,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.799127,
+                  "time_starttransfer": 0.877857,
+                  "speed_download": 2331299,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "4-baseline",
+          "at": 1792902240,
+          "retransmitted_segments_delta": 359,
+          "out_segments_delta": 29871,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.899089,
+              "time_starttransfer": 0.89904,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.896708,
+              "time_starttransfer": 0.896675,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 4194304,
+              "size_upload": 0,
+              "time_total": 1.830329,
+              "time_starttransfer": 0.862232,
+              "speed_download": 2291557,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 4194304,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.90775,
+              "time_starttransfer": 0.907715,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 8388608,
+              "time_total": 1.878317,
+              "time_starttransfer": 1.878283,
+              "speed_download": 0,
+              "speed_upload": 4466023,
+              "kind": "upload",
+              "bytes": 8388608,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.829014,
+              "time_starttransfer": 0.828975,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.877205,
+              "time_starttransfer": 0.877171,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 1.8906028848141432,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.864358,
+                  "time_starttransfer": 0.89641,
+                  "speed_download": 2249731,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.873126,
+                  "time_starttransfer": 0.904471,
+                  "speed_download": 2239200,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.841041,
+                  "time_starttransfer": 0.87269,
+                  "speed_download": 2278224,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.761177,
+                  "time_starttransfer": 0.838626,
+                  "speed_download": 2381534,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "5-baseline",
+          "at": 1792902254,
+          "retransmitted_segments_delta": 1406,
+          "out_segments_delta": 28556,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.86757,
+              "time_starttransfer": 0.867511,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.87742,
+              "time_starttransfer": 0.877386,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 4194304,
+              "size_upload": 0,
+              "time_total": 1.83545,
+              "time_starttransfer": 0.862015,
+              "speed_download": 2285163,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 4194304,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.865238,
+              "time_starttransfer": 0.865202,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 8388608,
+              "time_total": 1.906786,
+              "time_starttransfer": 1.906753,
+              "speed_download": 0,
+              "speed_upload": 4399344,
+              "kind": "upload",
+              "bytes": 8388608,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.872792,
+              "time_starttransfer": 0.872759,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.882376,
+              "time_starttransfer": 0.882282,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 1.873231939971447,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.85625,
+                  "time_starttransfer": 0.882115,
+                  "speed_download": 2259557,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.856504,
+                  "time_starttransfer": 0.888087,
+                  "speed_download": 2259248,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.748398,
+                  "time_starttransfer": 0.833171,
+                  "speed_download": 2398941,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.837059,
+                  "time_starttransfer": 0.87594,
+                  "speed_download": 2283162,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "6-candidate",
+          "at": 1792902268,
+          "retransmitted_segments_delta": 0,
+          "out_segments_delta": 28982,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.849141,
+              "time_starttransfer": 0.849104,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.881385,
+              "time_starttransfer": 0.881343,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 4194304,
+              "size_upload": 0,
+              "time_total": 1.830259,
+              "time_starttransfer": 0.862079,
+              "speed_download": 2291645,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 4194304,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.88019,
+              "time_starttransfer": 0.88015,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 8388608,
+              "time_total": 1.971184,
+              "time_starttransfer": 1.97115,
+              "speed_download": 0,
+              "speed_upload": 4255618,
+              "kind": "upload",
+              "bytes": 8388608,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.830322,
+              "time_starttransfer": 0.830287,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.890738,
+              "time_starttransfer": 0.890692,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 1.907808156684041,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.746445,
+                  "time_starttransfer": 0.830348,
+                  "speed_download": 2401623,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.890568,
+                  "time_starttransfer": 0.914801,
+                  "speed_download": 2218541,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.769744,
+                  "time_starttransfer": 0.848449,
+                  "speed_download": 2370006,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.831703,
+                  "time_starttransfer": 0.908499,
+                  "speed_download": 2289838,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "r2-1-candidate",
+          "at": 1792902348,
+          "retransmitted_segments_delta": 920,
+          "out_segments_delta": 28902,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.910982,
+              "time_starttransfer": 0.91094,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.834089,
+              "time_starttransfer": 0.834047,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 4194304,
+              "size_upload": 0,
+              "time_total": 1.836728,
+              "time_starttransfer": 0.874898,
+              "speed_download": 2283573,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 4194304,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.882057,
+              "time_starttransfer": 0.882025,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 8388608,
+              "time_total": 1.97444,
+              "time_starttransfer": 1.974394,
+              "speed_download": 0,
+              "speed_upload": 4248601,
+              "kind": "upload",
+              "bytes": 8388608,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.893823,
+              "time_starttransfer": 0.893782,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.86482,
+              "time_starttransfer": 0.864787,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 1.915391655638814,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.837645,
+                  "time_starttransfer": 0.876182,
+                  "speed_download": 2282434,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.827252,
+                  "time_starttransfer": 0.903782,
+                  "speed_download": 2295416,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.840229,
+                  "time_starttransfer": 0.876795,
+                  "speed_download": 2279229,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.876344,
+                  "time_starttransfer": 0.905934,
+                  "speed_download": 2235359,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "r2-2-baseline",
+          "at": 1792902362,
+          "retransmitted_segments_delta": 1894,
+          "out_segments_delta": 28481,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.868917,
+              "time_starttransfer": 0.868877,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.871044,
+              "time_starttransfer": 0.870951,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 4194304,
+              "size_upload": 0,
+              "time_total": 1.746949,
+              "time_starttransfer": 0.825595,
+              "speed_download": 2400930,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 4194304,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.878135,
+              "time_starttransfer": 0.878107,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 8388608,
+              "time_total": 1.979751,
+              "time_starttransfer": 1.979719,
+              "speed_download": 0,
+              "speed_upload": 4237203,
+              "kind": "upload",
+              "bytes": 8388608,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.839073,
+              "time_starttransfer": 0.839023,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.891985,
+              "time_starttransfer": 0.891951,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 1.8469684831798077,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.773432,
+                  "time_starttransfer": 0.852744,
+                  "speed_download": 2365077,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.775621,
+                  "time_starttransfer": 0.85094,
+                  "speed_download": 2362161,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.766608,
+                  "time_starttransfer": 0.847836,
+                  "speed_download": 2374213,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.831453,
+                  "time_starttransfer": 0.870276,
+                  "speed_download": 2290151,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "r2-3-baseline",
+          "at": 1792902376,
+          "retransmitted_segments_delta": 951,
+          "out_segments_delta": 29259,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.845943,
+              "time_starttransfer": 0.845904,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.871488,
+              "time_starttransfer": 0.871456,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 4194304,
+              "size_upload": 0,
+              "time_total": 1.848243,
+              "time_starttransfer": 0.888114,
+              "speed_download": 2269346,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 4194304,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.869698,
+              "time_starttransfer": 0.869669,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 8388608,
+              "time_total": 1.963327,
+              "time_starttransfer": 1.96329,
+              "speed_download": 0,
+              "speed_upload": 4272649,
+              "kind": "upload",
+              "bytes": 8388608,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.869438,
+              "time_starttransfer": 0.8694,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.878864,
+              "time_starttransfer": 0.87883,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 1.8974555563181639,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.835568,
+                  "time_starttransfer": 0.867834,
+                  "speed_download": 2285016,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.764811,
+                  "time_starttransfer": 0.848009,
+                  "speed_download": 2376630,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.879885,
+                  "time_starttransfer": 0.912287,
+                  "speed_download": 2231149,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.752399,
+                  "time_starttransfer": 0.837314,
+                  "speed_download": 2393464,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "phase": "r2-4-candidate",
+          "at": 1792902390,
+          "retransmitted_segments_delta": 1195,
+          "out_segments_delta": 29041,
+          "qdisc_drops": [
+            0
+          ],
+          "requests": [
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.838691,
+              "time_starttransfer": 0.838658,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.919601,
+              "time_starttransfer": 0.919569,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 4194304,
+              "size_upload": 0,
+              "time_total": 1.740769,
+              "time_starttransfer": 0.822571,
+              "speed_download": 2409454,
+              "speed_upload": 0,
+              "kind": "download",
+              "bytes": 4194304,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.837631,
+              "time_starttransfer": 0.837595,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 8388608,
+              "time_total": 1.956081,
+              "time_starttransfer": 1.956047,
+              "speed_download": 0,
+              "speed_upload": 4288476,
+              "kind": "upload",
+              "bytes": 8388608,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.875711,
+              "time_starttransfer": 0.875676,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "http_code": 200,
+              "size_download": 0,
+              "size_upload": 0,
+              "time_total": 0.885307,
+              "time_starttransfer": 0.885266,
+              "speed_download": 0,
+              "speed_upload": 0,
+              "kind": "loaded_latency",
+              "bytes": 0,
+              "exit": 0,
+              "ok": true
+            },
+            {
+              "kind": "parallel_download",
+              "ok": true,
+              "bytes": 16777216,
+              "time_total": 1.8840689230710268,
+              "streams": [
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.867305,
+                  "time_starttransfer": 0.898635,
+                  "speed_download": 2246180,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.84004,
+                  "time_starttransfer": 0.875211,
+                  "speed_download": 2279463,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.781822,
+                  "time_starttransfer": 0.85031,
+                  "speed_download": 2353941,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                },
+                {
+                  "http_code": 200,
+                  "size_download": 4194304,
+                  "size_upload": 0,
+                  "time_total": 1.793355,
+                  "time_starttransfer": 0.865551,
+                  "speed_download": 2338802,
+                  "speed_upload": 0,
+                  "kind": "download",
+                  "bytes": 4194304,
+                  "exit": 0,
+                  "ok": true
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "observed_interface_rx_tx_delta_MiB": 581.93,
+      "payload_MiB": 280.0
+    }
+  ],
+  "automatic_rollback_verified": true,
+  "final_configuration": "Both nodes restored to original qdisc; original sysctls verified; no persistence added"
+}

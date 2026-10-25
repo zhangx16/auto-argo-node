@@ -54,7 +54,7 @@ class PinnedHTTPS(PinnedHTTP):
         self.sock = ssl.create_default_context().wrap_socket(self.sock, server_hostname=self.host)
 
 
-def fetch(url):
+def fetch(url,metadata=None,user_agent='Auto-Argo-Node/1.0'):
     deadline = time.monotonic() + 25
     try:
         for redirect in range(4):
@@ -69,7 +69,7 @@ def fetch(url):
                 path = quote(u.path or '/', safe="/%:@!$&'()*+,;=-._~")
                 if u.query:
                     path += '?' + quote(u.query, safe="=&%/:?@!$'()*+,;~-._")
-                connection.request('GET', path, headers={'User-Agent': 'Auto-Argo-Node/1.0', 'Accept-Encoding': 'identity', 'Accept': 'text/plain,application/json,application/yaml,*/*'})
+                connection.request('GET', path, headers={'User-Agent': user_agent, 'Accept-Encoding': 'identity', 'Accept': 'text/plain,application/json,application/yaml,*/*'})
                 response = connection.getresponse()
                 if response.status in (301, 302, 303, 307, 308):
                     location = response.getheader('Location')
@@ -104,6 +104,8 @@ def fetch(url):
                     raise ValueError('订阅使用了不支持的压缩格式')
                 if len(content) > MAX_BYTES:
                     raise ValueError('订阅内容超过 1 MiB 限制')
+                if metadata is not None:
+                    metadata['subscription_userinfo']=response.getheader('Subscription-Userinfo') or ''
                 return content.decode('utf-8-sig')
             finally:
                 connection.close()

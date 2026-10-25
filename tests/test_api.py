@@ -52,6 +52,25 @@ class ApiTests(unittest.TestCase):
             if n['status']==state:return n
             time.sleep(.05)
         self.fail(f'node did not reach {state}: {n["status"]}')
+    def test_operations_auth_validation_and_health(self):
+        for endpoint in ('health','versions','upgrades'):
+            code,_=self.call('/api/operations/'+endpoint,authed=False);self.assertEqual(code,401)
+            code,result=self.call('/api/operations/'+endpoint);self.assertEqual(code,200,result)
+        code,_=self.call('/api/operations/maintenance','PUT',{'target':'1','minutes':30},origin='https://wrong.example');self.assertEqual(code,403)
+        code,_=self.call('/api/operations/maintenance','PUT',{'target':'1','minutes':-1});self.assertEqual(code,422)
+        code,_=self.call('/api/operations/upgrades','POST',{'node_ids':[]});self.assertEqual(code,422)
+        code,_=self.call('/agent/repair-permit','POST',authed=False);self.assertEqual(code,401)
+
+    def test_ssh_first_connection_requires_explicit_credentials(self):
+        code,_=self.call('/api/ssh/servers',authed=False);self.assertEqual(code,401)
+        code,_=self.call('/api/ssh/connection-probe','POST',{'host':'192.0.2.1','relay_node_id':999999},authed=False);self.assertEqual(code,401)
+        code,d=self.call('/api/ssh/connection-probe','POST',{'host':'192.0.2.1','relay_node_id':999999});self.assertEqual(code,400,d);self.assertIn('中转',d['detail'])
+        code,s=self.call('/api/ssh/servers','POST',{'name':'Pending SSH'});self.assertEqual(code,200,s);self.assertFalse(s['configured'])
+        body={'name':'Pending SSH','host':'192.0.2.1','host_key':'fixture-host-key-public-data','ssh_port':22}
+        code,d=self.call('/api/ssh/servers/'+s['id'],'PUT',body);self.assertEqual(code,400,d);self.assertIn('首次',d['detail'])
+        code,_=self.call('/api/ssh/servers/'+s['id']+'/tasks','POST',{'action':'diagnose'});self.assertEqual(code,409)
+        code,_=self.call('/api/ssh/servers','POST',{'name':'Blocked'},origin='https://wrong.example');self.assertEqual(code,403)
+
     def test_auth_origin_and_validation(self):
         code,_=self.call('/api/nodes',authed=False);self.assertEqual(code,401)
         code,_=self.call('/api/deployments/1','PATCH',{'remark':'X','node_port':18080},origin='https://wrong.example');self.assertEqual(code,403)

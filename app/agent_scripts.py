@@ -35,7 +35,7 @@ chmod 700 "$DIR"
 if [ "$LOCKED" = 0 ]; then exec 8>"$DIR/tick.lock"; flock 8; fi
 TMP=$(mktemp -d /tmp/argo-enroll.XXXXXXXX)
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
-for name in agent.sh repair.sh library.sh fixed.sh traffic.sh resources.sh diagnose.sh core.sh monitor-publish.sh; do
+for name in agent.sh repair.sh library.sh fixed.sh traffic.sh resources.sh diagnose.sh core.sh; do
  curl --http1.1 --connect-timeout 10 --max-time 90 -fsSL "$PANEL/agent/assets/$name" -o "$TMP/$name"
  chmod 700 "$TMP/$name"
 done
@@ -51,7 +51,7 @@ printf '%s\\n' 'header = "Content-Type: application/json"' 'silent' 'show-error'
 chmod 600 "$DIR/settings.json.new" "$DIR/curl.conf.new"
 mv "$DIR/settings.json.new" "$DIR/settings.json"
 mv "$DIR/curl.conf.new" "$DIR/curl.conf"
-for name in agent.sh repair.sh library.sh fixed.sh traffic.sh resources.sh diagnose.sh core.sh monitor-publish.sh; do mv "$TMP/$name" "$BASE/$name"; done
+for name in agent.sh repair.sh library.sh fixed.sh traffic.sh resources.sh diagnose.sh core.sh; do mv "$TMP/$name" "$BASE/$name"; done
 rm -f "$DIR/disabled"
 # Reuse the system's cron daemon; no Python or persistent monitoring process.
 if ! command -v crontab >/dev/null 2>&1; then
@@ -75,20 +75,6 @@ sh "$BASE/agent.sh" "$DIR"
 echo '安装命令执行完毕。请在面板查看结果；后续每分钟检查和上报一次。'
 '''
 
-    if options is not None and not options.get('management_enabled',1):
-        start=script.index('# Reuse the system')
-        end=script.index('flock -u 8',start)
-        script=script[:start]+'''# Protocol-only: remove only this node's management tick, retaining other hosts/services.
-if command -v crontab >/dev/null 2>&1;then
- (crontab -l 2>/dev/null || true) | grep -vE "# argo-deploy-node-${NODE_ID}$" > "$TMP/cron" || true
- crontab "$TMP/cron"
-fi
-''' +script[end:]
-        script=script.replace('后续每分钟检查和上报一次。','协议独立运行，资源探针使用单独安装命令。')
-        # Argo's own tunnel watchdog requires cron even without panel monitoring.
-        if json.loads(options.get('desired_json','{}')).get('protocol','vless-ws-argo')!='vless-ws-argo':
-            script=script.replace(' util-linux-misc dcron',' util-linux-misc').replace(' util-linux cron',' util-linux')
-        start=script.index('# Optional kernel traffic')
-        end=script.index('BASE=/usr/local/lib',start)
-        script=script[:start]+script[end:]
+    if options and options.get('ssh_transport'):
+        script=script.replace('sh "$BASE/agent.sh" "$DIR"', '''bash -c 'curl() { command curl -H "X-SSH-Execution: 1" "$@"; }; export -f curl; exec bash "$1/agent.sh" "$2"' argo-ssh-bootstrap "$BASE" "$DIR"''')
     return script

@@ -11,6 +11,13 @@ from .node_formats import parse_uri,singbox_outbound
 
 @contextmanager
 def runtime(link,cancel):
+    from . import runtime_budget
+    with runtime_budget.slot():
+        with _runtime(link,cancel) as port:yield port
+
+
+@contextmanager
+def _runtime(link,cancel):
     outbound=singbox_outbound(parse_uri(link));outbound['tag']='node'
     with socket.socket() as reserve:
         reserve.bind(('127.0.0.1',0));port=reserve.getsockname()[1]

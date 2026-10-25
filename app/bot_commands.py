@@ -57,8 +57,8 @@ def node_text():
 def command_text(command):
     from . import telemetry
     if command=='traffic':return telemetry.summary_text(),'traffic-module'
-    if command in ('status','nodes'):return node_text(),'node-module'
-    return telemetry.message_text('👋 节点管理助手' if command=='start' else '📖 快捷指令帮助',hint='查询只向面板已绑定的聊天开放。')+'\n\n/start  打开助手\n/status  节点运行状态\n/nodes  查看节点列表\n/traffic  流量用量简报\n/help  指令说明\n\n点击左侧指令菜单，或直接发送以上命令。','node-module'
+    if command in ('status','nodes'):return node_text(),'server-module'
+    return telemetry.message_text('👋 节点管理助手' if command=='start' else '📖 快捷指令帮助',hint='查询只向面板已绑定的聊天开放。')+'\n\n/start  打开助手\n/status  节点运行状态\n/nodes  查看节点列表\n/traffic  流量用量简报\n/help  指令说明\n\n点击左侧指令菜单，或直接发送以上命令。','server-module'
 
 
 def poll(cfg):

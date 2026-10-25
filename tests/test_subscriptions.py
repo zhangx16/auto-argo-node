@@ -138,7 +138,8 @@ class SubscriptionTests(unittest.TestCase):
         names = [p['name'] for p in config['proxies']]
         self.assertEqual(len(set(names)), 2)
         self.assertNotIn('DIRECT', names)
-        self.assertIn(str(second), names[0])
+        self.assertTrue(names[0].endswith('-cf'))
+        self.assertIn(str(first), names[1])
         code, preview = self.call(f"/api/subscriptions/{sub['id']}/preview?format=singbox")
         self.assertEqual(code, 200)
         self.assertEqual(preview['node_count'], 2)

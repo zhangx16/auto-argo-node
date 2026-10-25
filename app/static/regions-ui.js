@@ -1,6 +1,6 @@
 'use strict';
 window.nodeLabel=n=>n.display_name||((n.country_flag?n.country_flag+' ':'')+(n.remark||n.name||''));
-window.nodeShareLink=n=>n.country_code&&/^(vless|hysteria2):/.test(n.share_link||'')?n.share_link.split('#')[0]+'#'+encodeURIComponent(nodeLabel(n)):n.share_link;
+window.nodeShareLink=n=>n.display_name&&/^(vless|hysteria2):/.test(n.share_link||'')?n.share_link.split('#')[0]+'#'+encodeURIComponent(nodeLabel(n)):n.share_link;
 (()=>{
  const dialog=document.getElementById('region-dialog');if(!dialog)return;
  const $=id=>document.getElementById(id);let editing=null,countries=null;

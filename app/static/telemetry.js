@@ -1,7 +1,7 @@
 'use strict';
 (()=>{
  const el=id=>document.getElementById(id);
- if(!el('traffic-module'))return;
+ if(!el('traffic-workspace'))return;
  let cfg={};
  const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
  const bytes=n=>{n=Number(n||0);const u=['B','KiB','MiB','GiB','TiB'];let i=0;while(n>=1024&&i<4){n/=1024;i++;}return `${n.toFixed(i?2:0)} ${u[i]}`;};
@@ -52,24 +52,27 @@
   el('traffic-chart-data').innerHTML=points.map(p=>`<tr><td>${esc(p.date)}</td><td>${p.measured?bytes(p.rx):'未采集'}</td><td>${p.measured?bytes(p.tx):'未采集'}</td><td>${p.measured?bytes(p.rx+p.tx):'—'}</td></tr>`).join('');
  }
  async function traffic(){const requestId=++chartRequest;try{
-  const days=el('traffic-days').value,node=el('traffic-chart-node').value,params=new URLSearchParams({days});if(node)params.set('node_id',node);
-  const d=await request('/api/traffic?'+params);if(requestId!==chartRequest)return;const t=d.totals;if(el('stat-today'))el('stat-today').textContent=bytes(t.today_rx+t.today_tx);
+  const scope=window.serverWorkspace||window.monitorTrafficScope,days=el('traffic-days').value,node=el('traffic-chart-node').value,params=new URLSearchParams({days});if(scope)params.set('server_id',scope.id);if(node&&(!scope||scope.nodeIds.includes(Number(node))))params.set('node_id',node);
+  const d=await request('/api/traffic?'+params);if(requestId!==chartRequest)return;const t=d.totals;if(!scope&&el('stat-today'))el('stat-today').textContent=bytes(t.today_rx+t.today_tx);
   el('traffic-totals').textContent=`今日 ${bytes(t.today_rx+t.today_tx)} · 本月 ${bytes(t.month_rx+t.month_tx)} · 累计 ${bytes(t.rx+t.tx)}`;el('traffic-scope').textContent=d.scope;
-  const select=el('traffic-chart-node');select.replaceChildren(new Option('全部节点',''));d.nodes.forEach(n=>select.add(new Option(nodeLabel(n),String(n.id))));select.value=d.nodes.some(n=>String(n.id)===node)?node:'';
+  const select=el('traffic-chart-node');select.replaceChildren(new Option(scope?'此服务器全部节点':'全部节点',''));d.nodes.forEach(n=>select.add(new Option(nodeLabel(n),String(n.id))));select.value=d.nodes.some(n=>String(n.id)===node)?node:'';
   chartHistory=d.history||{points:[]};renderChart();
   const opened=new Set([...el('traffic-nodes').querySelectorAll('details[open]')].map(n=>n.dataset.trafficNode));
   el('traffic-nodes').innerHTML=d.nodes.map(n=>`<details class="chain-card" data-traffic-node="${n.id}" ${opened.has(String(n.id))?'open':''}><summary>${esc(nodeLabel(n))} · 今日 ${bytes(n.today_rx+n.today_tx)} · ${n.available?'采集中':'尚未采集 / 已过期'}</summary><p class="meta">今日 IN ${bytes(n.today_rx)} / OUT ${bytes(n.today_tx)}<br>本月 IN ${bytes(n.month_rx)} / OUT ${bytes(n.month_tx)}<br>累计 IN ${bytes(n.rx)} / OUT ${bytes(n.tx)}<br>最后采集 ${n.sampled_at?esc(new Date(n.sampled_at*1000).toLocaleString()):'尚未采集'}</p>${n.quota?.limit_bytes?`<div class="subscription-usage"><div class="usage-heading"><strong>${bytes(n.quota.used_bytes)} / ${bytes(n.quota.limit_bytes)}</strong><span>${n.quota.percent}%${n.quota.exceeded?' · 已超额度':''}</span></div><progress max="100" value="${Math.min(100,n.quota.percent)}" aria-label="本周期流量用量"></progress><p class="meta">结算周期（UTC）：${esc(n.quota.cycle_start)} 至 ${esc(n.quota.cycle_end)}（不含） · 剩余 ${bytes(n.quota.remaining_bytes)} · ${n.quota.measured_days} 天有记录 · 只提醒，不停用</p></div>`:''}<button class="ghost" type="button" data-quota="${n.id}" data-node-name="${esc(n.remark)}">设置流量额度</button>${n.agent_version&&n.agent_version<4?`<button class="ghost" type="button" data-upgrade="${n.id}">更新轻量监控脚本</button>`:''}</details>`).join('')||'<p class="empty">暂无节点</p>';
  }catch(e){message(e.message,true);}}
+ document.addEventListener('server-workspace-change',()=>{chartRequest++;chartHistory=null;chartLayout=null;hideTooltip();el('traffic-chart-node').value='';chartHost.textContent='读取当前范围流量…';if(window.serverWorkspace)el('server-dialog').append(tooltip);else document.body.append(tooltip);traffic();});
+ document.addEventListener('server-workspace-tab',e=>{if(e.detail.tab==='traffic')traffic();});
  el('traffic-days').onchange=traffic;el('traffic-chart-node').onchange=traffic;
  const observer=new ResizeObserver(()=>renderChart());observer.observe(el('traffic-chart'));
  document.addEventListener('regions-updated',()=>traffic());
  async function settings(){try{cfg=await request('/api/notifications');el('tg-chat').value=cfg.chat_id;document.querySelectorAll('[data-tg-category]').forEach(e=>e.checked=cfg['alerts_'+e.dataset.tgCategory]!==false);el('tg-enabled').checked=cfg.enabled;el('tg-summary').checked=cfg.summary_enabled;el('tg-hours').value=cfg.summary_hours;el('tg-offline').value=cfg.offline_seconds;el('tg-token').placeholder=cfg.configured?'已加密保存，留空保留':'Telegram Bot Token';el('tg-status').textContent=cfg.configured?`@${cfg.bot_username} · 待发送 ${cfg.queued} 条 · ${cfg.last_error||('上次发送 '+(cfg.last_sent||'尚未发送'))}`:'尚未配置 Bot';}catch(e){message(e.message,true);}}
- el('tg-form').onsubmit=async e=>{e.preventDefault();const b=e.submitter||el('tg-form').querySelector('[type="submit"]');b.disabled=true;try{await request('/api/notifications','PUT',{token:el('tg-token').value,chat_id:el('tg-chat').value.trim(),enabled:el('tg-enabled').checked,summary_enabled:el('tg-summary').checked,summary_hours:Number(el('tg-hours').value),offline_seconds:Number(el('tg-offline').value),...Object.fromEntries([...document.querySelectorAll('[data-tg-category]')].map(e=>['alerts_'+e.dataset.tgCategory,e.checked]))});el('tg-token').value='';await settings();message('通知配置已保存');}catch(e){message(e.message,true);}finally{b.disabled=false;}};
+ if(el('tg-form')){el('tg-form').onsubmit=async e=>{e.preventDefault();const b=e.submitter||el('tg-form').querySelector('[type="submit"]');b.disabled=true;try{await request('/api/notifications','PUT',{token:el('tg-token').value,chat_id:el('tg-chat').value.trim(),enabled:el('tg-enabled').checked,summary_enabled:el('tg-summary').checked,summary_hours:Number(el('tg-hours').value),offline_seconds:Number(el('tg-offline').value),...Object.fromEntries([...document.querySelectorAll('[data-tg-category]')].map(e=>['alerts_'+e.dataset.tgCategory,e.checked]))});el('tg-token').value='';await settings();message('通知配置已保存');}catch(e){message(e.message,true);}finally{b.disabled=false;}};
  el('tg-find').onclick=async()=>{try{const chats=await request('/api/notifications/chats','POST');el('tg-chats').innerHTML=chats.map(c=>`<button class="ghost" type="button" data-chat="${esc(c.id)}">${esc(c.name)} (${esc(c.id)})</button>`).join('')||'没有找到聊天，请先向 Bot 发送 /start。';}catch(e){message(e.message,true);}};
  el('tg-chats').onclick=e=>{const b=e.target.closest('[data-chat]');if(b){el('tg-chat').value=b.dataset.chat;message('已选择聊天，请保存配置');}};
  el('tg-test').onclick=async()=>{try{await request('/api/notifications/test','POST');message('测试通知已发送');}catch(e){message(e.message,true);}};
- el('traffic-notify').onclick=async()=>{try{await request('/api/traffic/notify','POST');message('汇总已加入通知队列');}catch(e){message(e.message,true);}};
+ }
+ if(el('traffic-notify'))el('traffic-notify').onclick=async()=>{try{await request('/api/traffic/notify','POST');message('汇总已加入通知队列');}catch(e){message(e.message,true);}};
  el('traffic-refresh').onclick=traffic;
  el('traffic-nodes').onclick=async e=>{const b=e.target.closest('[data-upgrade]');if(!b)return;b.disabled=true;try{await request(`/api/agent-nodes/${b.dataset.upgrade}/upgrade`,'POST');message('更新任务已排队；节点下次连接时执行，不更改协议与端口。');}catch(e){message(e.message,true);b.disabled=false;}};
- settings();traffic();setInterval(()=>{const r=el('traffic-module').getBoundingClientRect();if(!document.hidden&&((r.bottom>0&&r.top<innerHeight)||document.getElementById('overview')?.getBoundingClientRect().bottom>0))traffic();},30000);
+ if(el('tg-form'))settings();document.addEventListener('monitor-traffic-scope',()=>{el('traffic-chart-node').value='';traffic();});traffic();setInterval(()=>{const r=el('traffic-module')?.getBoundingClientRect()||el('traffic-workspace').getBoundingClientRect();if(!document.hidden&&((r.bottom>0&&r.top<innerHeight)||document.getElementById('overview')?.getBoundingClientRect().bottom>0))traffic();},30000);
 })();

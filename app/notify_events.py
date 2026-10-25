@@ -40,10 +40,14 @@ def event_notifications(cfg):
     for e in rows:
         put('events_cursor',e['id'])
         if telemetry.age_seconds(e['created_at'])>600:continue
+        from . import operations
+        if operations.maintenance(e['node_id']):continue
         kind=e['kind'];message=e['message'];category='changes';title='';hint='';urgent=e['level']=='warning'
         if kind=='job' and ('执行成功' in message or '执行失败' in message):
             category='tasks';title='❌ 节点任务失败' if urgent else '🛠 节点任务已执行'
             hint='请打开部署任务查看日志；执行完成不等于转发验证通过。'
+        elif kind=='repair_limit':title='⏸ 自动修复已暂停';hint='达到修复上限，请检查故障详情后手动解除。'
+        elif kind=='upgrade' and not message.startswith('已加入'):title='📦 节点升级进度';hint='请在运维中心查看批次及实际转发验证。'
         elif kind=='repair':
             title='🔧 节点已尝试自动修复';hint='面板将继续验证实际转发，请留意恢复通知。'
             key=f'repair_cooldown:{e["node_id"]}'
@@ -55,7 +59,7 @@ def event_notifications(cfg):
             title='✅ 配置验证完成' if message in ('新配置验证通过','已恢复修改前配置并通过验证') else '↩️ 配置恢复提醒'
             hint='原有订阅会读取当前生效配置。'
         else:continue
-        if enabled(cfg,category):telemetry.enqueue(f'event:{e["id"]}',telemetry.message_text(title,[('节点',telemetry.node_name(e['node_id'])),('结果',message)],hint),category=category,route='task-module' if kind=='job' else 'node-module',priority=2 if urgent else 1)
+        if enabled(cfg,category):telemetry.enqueue(f'event:{e["id"]}',telemetry.message_text(title,[('节点',telemetry.node_name(e['node_id'])),('结果',message)],hint),category=category,route=f'node:{e["node_id"]}',priority=2 if urgent else 1)
 
 
 def subscription_notifications(cfg):
@@ -98,18 +102,15 @@ def resource_notifications(cfg):
     last=get('resource_poll',0)
     if now-last<60:return
     put('resource_poll',now)
-    if not c.execute('SELECT 1 FROM monitor_hosts WHERE last_seen>? LIMIT 1',(now-90,)).fetchone():return
-    try:remote=monitor.hub('/nodes')
-    except Exception:
-        # Missing samples break the sustained-pressure window.
-        for r in c.execute("SELECT key,value FROM notification_observations WHERE key LIKE 'resource:%'").fetchall():
-            state=json.loads(r['value']);state['since']=now;state['last']=0;state['high']=False;put(r['key'],state)
-        return
-    if isinstance(remote,dict):remote=remote.get('nodes',[])
-    byid={h['id']:h for h in remote}
-    for h in c.execute('SELECT id,hub_id,name,last_seen FROM monitor_hosts'):
-        r=byid.get(h['hub_id'],{});m=r.get('metrics') or {}
-        fresh=r.get('online') and now-h['last_seen']<90
+    # One latest legacy script sample per canonical server, no Monitor hub call.
+    hosts=c.execute('SELECT id,name,monitor_host_id FROM ssh_servers').fetchall()
+    for h in hosts:
+        from . import operations
+        if h['monitor_host_id'] and operations.host_maintenance(h['monitor_host_id']):continue
+        sample=c.execute('SELECT r.received_at,r.sample FROM node_resource_latest r JOIN ssh_nodes n ON n.node_id=r.node_id WHERE n.server_id=? ORDER BY r.received_at DESC LIMIT 1',(h['id'],)).fetchone()
+        values=json.loads(sample['sample']) if sample else {}
+        m={'cpu':values.get('cpu_percent'),'mem_used':values.get('memory_used',0),'mem_total':values.get('memory_total',0),'disk_used':values.get('disk_used',0),'disk_total':values.get('disk_total',0)}
+        fresh=bool(sample and now-sample['received_at']<180)
         for metric,label in [('cpu','CPU'),('mem','内存'),('disk','磁盘')]:
             key=f'resource:{h["id"]}:{metric}';old=get(key,{'since':now,'last':0,'notified':False})
             value=m.get('cpu') if metric=='cpu' else 100*m.get(metric+'_used',0)/m[metric+'_total'] if m.get(metric+'_total',0)>0 else None

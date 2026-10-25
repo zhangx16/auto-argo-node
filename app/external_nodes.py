@@ -22,8 +22,8 @@ def init():
         port INTEGER NOT NULL, enabled INTEGER NOT NULL DEFAULT 1, source_label TEXT NOT NULL DEFAULT '',
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL
     );''')
-    if 'source_available' not in {r['name'] for r in c.execute('PRAGMA table_info(external_nodes)')}:
-        c.execute('ALTER TABLE external_nodes ADD COLUMN source_available INTEGER NOT NULL DEFAULT 1')
+    from . import schema
+    schema.columns('external_nodes',[('source_available', 'INTEGER NOT NULL DEFAULT 1')],version=1)
     c.commit()
 
 
@@ -63,6 +63,28 @@ class EditBody(NodeInput):
         if not value.strip() or any(ord(c) < 32 or ord(c) == 127 for c in value):
             raise ValueError('请输入有效节点名称')
         return value.strip()
+
+
+class DeleteBody(BaseModel):
+    node_ids: list[int] = Field(min_length=1,max_length=MAX_NODES)
+
+    @field_validator('node_ids')
+    @classmethod
+    def valid_ids(cls,value):
+        if any(v<1 for v in value) or len(set(value))!=len(value):raise ValueError('请选择有效且不重复的外部节点')
+        return value
+
+
+def remove_many(node_ids):
+    from . import agent,sources
+    with agent.LOCK:
+        c=db.get_conn()
+        for node_id in node_ids:get(node_id)
+        with c:
+            for node_id in node_ids:
+                sources.removed(node_id)
+                c.execute('DELETE FROM external_nodes WHERE id=?',(node_id,))
+    return {'ok':True,'deleted':len(node_ids)}
 
 
 def get(node_id):
@@ -193,6 +215,11 @@ def register(app, owner):
         owner(request)
         return add(body)
 
+    @app.post('/api/external-nodes/bulk-delete')
+    def bulk_delete(body:DeleteBody,request:Request):
+        owner(request)
+        return remove_many(body.node_ids)
+
     @app.put('/api/external-nodes/{node_id}')
     def edit(node_id: int, body: EditBody, request: Request):
         owner(request)
@@ -224,12 +251,4 @@ def register(app, owner):
     @app.delete('/api/external-nodes/{node_id}')
     def delete(node_id: int, request: Request):
         owner(request)
-        from . import agent
-        with agent.LOCK:
-            get(node_id)
-            c = db.get_conn()
-            from . import sources
-            with c:
-                sources.removed(node_id)
-                c.execute('DELETE FROM external_nodes WHERE id=?', (node_id,))
-            return {'ok': True}
+        return remove_many([node_id])

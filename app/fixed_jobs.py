@@ -5,7 +5,8 @@ from pathlib import Path
 ROOT = Path(__file__).parent
 
 
-def upgrade(node_id, port, protocol='vless-ws-argo'):
+def upgrade(node_id, port, protocol='vless-ws-argo', expected_hashes=None):
+    checks='\n'.join("printf '%s  %s\\n' "+shlex.quote(digest)+" \"$TMP/"+name+"\" | sha256sum -c -" for name,digest in (expected_hashes or {}).items())
     return '''#!/bin/sh
 set -eu
 umask 077
@@ -14,10 +15,11 @@ BASE=/usr/local/lib/argo-deploy
 PANEL=$(jq -r '.panel' "$DIR/settings.json")
 TMP=$(mktemp -d "$DIR/upgrade.XXXXXXXX")
 trap 'rm -rf "$TMP"' EXIT HUP INT TERM
-for name in agent.sh repair.sh library.sh fixed.sh traffic.sh resources.sh diagnose.sh core.sh monitor-publish.sh; do
+for name in agent.sh repair.sh library.sh fixed.sh traffic.sh resources.sh diagnose.sh core.sh; do
  curl --config "$DIR/curl.conf" -fsS "$PANEL/agent/assets/$name" -o "$TMP/$name"
  chmod 700 "$TMP/$name"
 done
+'''+checks+'''
 sh -n "$TMP/agent.sh"
 sh -n "$TMP/traffic.sh"
 sh -n "$TMP/resources.sh"
@@ -31,7 +33,7 @@ if [ ! -d "$BACKUP" ];then
  mkdir -p "$BACKUP";chmod 700 "$BACKUP"
  for name in agent.sh repair.sh library.sh fixed.sh traffic.sh resources.sh diagnose.sh;do [ ! -f "$BASE/$name" ] || cp -p "$BASE/$name" "$BACKUP/$name";done
 fi
-for name in repair.sh library.sh fixed.sh traffic.sh resources.sh diagnose.sh core.sh monitor-publish.sh agent.sh; do mv "$TMP/$name" "$BASE/$name"; done
+for name in repair.sh library.sh fixed.sh traffic.sh resources.sh diagnose.sh core.sh agent.sh; do mv "$TMP/$name" "$BASE/$name"; done
 # Installing nft is optional; never changes existing firewall services.
 if ! command -v nft >/dev/null 2>&1;then
  if command -v apk >/dev/null;then apk add --no-cache nftables || true;else apt-get install -y --no-install-recommends nftables || true;fi

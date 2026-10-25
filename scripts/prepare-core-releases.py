@@ -23,8 +23,7 @@ for version in (VERSION,'1.13.21'):
         dest.chmod(0o755);archive.unlink()
 manifest={'core_version':VERSION,'core_source':'7054cac5124465ffdb145870d7c01885566711b1','files':{}}
 for f in sorted(root.iterdir()):
-    if f.name.startswith(('sing-box-','monitor-agent-')) and f.is_file() and not f.name.endswith(('.download','.new')):manifest['files'][f.name]={'sha256':hashlib.sha256(f.read_bytes()).hexdigest(),'size':f.stat().st_size,'version':('1.2.2+argo2' if f.name.startswith('monitor-agent-') else '1.13.21' if '-1.13.21-' in f.name else VERSION)}
+    if f.name.startswith('sing-box-') and f.is_file() and not f.name.endswith(('.download','.new')):manifest['files'][f.name]={'sha256':hashlib.sha256(f.read_bytes()).hexdigest(),'size':f.stat().st_size,'version':('1.13.21' if '-1.13.21-' in f.name else VERSION)}
 manifest['locked_core_source']='628cb31ffa79cffffd34c2f9cde6cae044e4fc12'
-manifest['monitor_extension']='2026-10-23.2'
 (root/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 print('Release manifest:',len(manifest['files']),'verified/indexed binaries')

@@ -1,0 +1,529 @@
+{
+  "date": "2026-10-25",
+  "host_alias": "US container host trial",
+  "platform": {
+    "os": "Debian 13",
+    "kernel": "6.12.107+deb13-cloud-amd64",
+    "virtualization": "KVM",
+    "vcpus": 2,
+    "MemTotal_KiB": 2021536,
+    "default_cc": "bbr",
+    "default_qdisc": "fq",
+    "actual_main_qdisc": "fq_codel",
+    "tcp_buffer_max_bytes": 8388608,
+    "mtu": 1500,
+    "XDP_present": true,
+    "Incus_and_Podman_present": true
+  },
+  "rounds": [
+    {
+      "peer": "near",
+      "mode": "baseline",
+      "label": "r2-1-near-baseline",
+      "aggregate_rate_cap_Mbps": 200,
+      "tests": [
+        {
+          "kind": "up1",
+          "goodput_Mbps": 200.077,
+          "received_bytes": 75104256,
+          "duration_seconds": 3.003017,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 3.225299264851554,
+          "loaded_ping_avg_ms": 0.631,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "down1",
+          "goodput_Mbps": 200.222,
+          "received_bytes": 75104256,
+          "duration_seconds": 3.000846,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 5.79357320719535,
+          "loaded_ping_avg_ms": 0.607,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "up4",
+          "goodput_Mbps": 201.13,
+          "received_bytes": 75497472,
+          "duration_seconds": 3.002928,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 3.740423674044623,
+          "loaded_ping_avg_ms": 0.642,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "down4",
+          "goodput_Mbps": 199.862,
+          "received_bytes": 74973184,
+          "duration_seconds": 3.000994,
+          "sender_retransmitted_segments": 1,
+          "host_iperf_CPU_percent": 6.6140333557043185,
+          "loaded_ping_avg_ms": 1.582,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        }
+      ]
+    },
+    {
+      "peer": "near",
+      "mode": "cubic",
+      "label": "r2-2-near-cubic",
+      "aggregate_rate_cap_Mbps": 200,
+      "tests": [
+        {
+          "kind": "up1",
+          "goodput_Mbps": 199.902,
+          "received_bytes": 75104256,
+          "duration_seconds": 3.005648,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 3.096490356150412,
+          "loaded_ping_avg_ms": 0.574,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "down1",
+          "goodput_Mbps": 200.206,
+          "received_bytes": 75104256,
+          "duration_seconds": 3.001077,
+          "sender_retransmitted_segments": 13,
+          "host_iperf_CPU_percent": 5.890629743447717,
+          "loaded_ping_avg_ms": 0.6,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "up4",
+          "goodput_Mbps": 201.101,
+          "received_bytes": 75497472,
+          "duration_seconds": 3.003366,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 3.55348903842066,
+          "loaded_ping_avg_ms": 0.654,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "down4",
+          "goodput_Mbps": 199.857,
+          "received_bytes": 74973184,
+          "duration_seconds": 3.001076,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 7.01285776403726,
+          "loaded_ping_avg_ms": 1.081,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        }
+      ]
+    },
+    {
+      "peer": "far",
+      "mode": "baseline",
+      "label": "r2-3-far-baseline",
+      "aggregate_rate_cap_Mbps": 80,
+      "tests": [
+        {
+          "kind": "up1",
+          "goodput_Mbps": 23.921,
+          "received_bytes": 12451840,
+          "duration_seconds": 4.164289,
+          "sender_retransmitted_segments": 1140,
+          "host_iperf_CPU_percent": 0.3179134455006443,
+          "loaded_ping_avg_ms": 161.831,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "down1",
+          "goodput_Mbps": 79.932,
+          "received_bytes": 39976960,
+          "duration_seconds": 4.001075,
+          "sender_retransmitted_segments": 1,
+          "host_iperf_CPU_percent": 3.695195592206224,
+          "loaded_ping_avg_ms": 161.829,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "up4",
+          "goodput_Mbps": 53.48,
+          "received_bytes": 27918336,
+          "duration_seconds": 4.176262,
+          "sender_retransmitted_segments": 2191,
+          "host_iperf_CPU_percent": 0.757182830773512,
+          "loaded_ping_avg_ms": 161.86,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "down4",
+          "goodput_Mbps": 79.425,
+          "received_bytes": 39714816,
+          "duration_seconds": 4.000231,
+          "sender_retransmitted_segments": 60,
+          "host_iperf_CPU_percent": 4.4207369843813344,
+          "loaded_ping_avg_ms": 161.843,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        }
+      ]
+    },
+    {
+      "peer": "far",
+      "mode": "window4m",
+      "label": "r2-4-far-window4m",
+      "aggregate_rate_cap_Mbps": 80,
+      "tests": [
+        {
+          "kind": "up1",
+          "goodput_Mbps": 23.42,
+          "received_bytes": 12189696,
+          "duration_seconds": 4.163884,
+          "sender_retransmitted_segments": 973,
+          "host_iperf_CPU_percent": 0.3841929951322178,
+          "loaded_ping_avg_ms": 161.866,
+          "socket_buffers": {
+            "requested": 4194304,
+            "snd": 8388608,
+            "rcv": 8388608
+          }
+        },
+        {
+          "kind": "down1",
+          "goodput_Mbps": 79.933,
+          "received_bytes": 39976960,
+          "duration_seconds": 4.001067,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 4.54340631100248,
+          "loaded_ping_avg_ms": 161.855,
+          "socket_buffers": {
+            "requested": 4194304,
+            "snd": 8388608,
+            "rcv": 8388608
+          }
+        },
+        {
+          "kind": "up4",
+          "goodput_Mbps": 67.948,
+          "received_bytes": 35389440,
+          "duration_seconds": 4.166676,
+          "sender_retransmitted_segments": 6062,
+          "host_iperf_CPU_percent": 1.025050049987104,
+          "loaded_ping_avg_ms": 161.797,
+          "socket_buffers": {
+            "requested": 4194304,
+            "snd": 8388608,
+            "rcv": 8388608
+          }
+        },
+        {
+          "kind": "down4",
+          "goodput_Mbps": 79.67,
+          "received_bytes": 39845888,
+          "duration_seconds": 4.001087,
+          "sender_retransmitted_segments": 24,
+          "host_iperf_CPU_percent": 4.491455330205792,
+          "loaded_ping_avg_ms": 161.847,
+          "socket_buffers": {
+            "requested": 4194304,
+            "snd": 8388608,
+            "rcv": 8388608
+          }
+        }
+      ]
+    },
+    {
+      "peer": "far",
+      "mode": "window4m",
+      "label": "r2-5-far-window4m",
+      "aggregate_rate_cap_Mbps": 80,
+      "tests": [
+        {
+          "kind": "up1",
+          "goodput_Mbps": 31.933,
+          "received_bytes": 16646144,
+          "duration_seconds": 4.170216,
+          "sender_retransmitted_segments": 1545,
+          "host_iperf_CPU_percent": 0.3892845369460219,
+          "loaded_ping_avg_ms": 161.909,
+          "socket_buffers": {
+            "requested": 4194304,
+            "snd": 8388608,
+            "rcv": 8388608
+          }
+        },
+        {
+          "kind": "down1",
+          "goodput_Mbps": 71.02,
+          "received_bytes": 35520512,
+          "duration_seconds": 4.001175,
+          "sender_retransmitted_segments": 29,
+          "host_iperf_CPU_percent": 2.766082147549571,
+          "loaded_ping_avg_ms": 161.784,
+          "socket_buffers": {
+            "requested": 4194304,
+            "snd": 8388608,
+            "rcv": 8388608
+          }
+        },
+        {
+          "kind": "up4",
+          "goodput_Mbps": 69.536,
+          "received_bytes": 36175872,
+          "duration_seconds": 4.161991,
+          "sender_retransmitted_segments": 4472,
+          "host_iperf_CPU_percent": 1.1608987281913439,
+          "loaded_ping_avg_ms": 161.786,
+          "socket_buffers": {
+            "requested": 4194304,
+            "snd": 8388608,
+            "rcv": 8388608
+          }
+        },
+        {
+          "kind": "down4",
+          "goodput_Mbps": 79.931,
+          "received_bytes": 39976960,
+          "duration_seconds": 4.001148,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 5.128379975280994,
+          "loaded_ping_avg_ms": 161.866,
+          "socket_buffers": {
+            "requested": 4194304,
+            "snd": 8388608,
+            "rcv": 8388608
+          }
+        }
+      ]
+    },
+    {
+      "peer": "far",
+      "mode": "baseline",
+      "label": "r2-6-far-baseline",
+      "aggregate_rate_cap_Mbps": 80,
+      "tests": [
+        {
+          "kind": "up1",
+          "goodput_Mbps": 33.985,
+          "received_bytes": 17694720,
+          "duration_seconds": 4.165321,
+          "sender_retransmitted_segments": 1521,
+          "host_iperf_CPU_percent": 0.30694959922803,
+          "loaded_ping_avg_ms": 161.902,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "down1",
+          "goodput_Mbps": 79.932,
+          "received_bytes": 39976960,
+          "duration_seconds": 4.001112,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 3.8796319323551356,
+          "loaded_ping_avg_ms": 161.823,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "up4",
+          "goodput_Mbps": 67.391,
+          "received_bytes": 35127296,
+          "duration_seconds": 4.169954,
+          "sender_retransmitted_segments": 3290,
+          "host_iperf_CPU_percent": 0.8855398939579463,
+          "loaded_ping_avg_ms": 161.834,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "down4",
+          "goodput_Mbps": 80.192,
+          "received_bytes": 40108032,
+          "duration_seconds": 4.001192,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 4.867193653569235,
+          "loaded_ping_avg_ms": 161.824,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        }
+      ]
+    },
+    {
+      "peer": "far",
+      "mode": "cubic",
+      "label": "r2-7-far-cubic",
+      "aggregate_rate_cap_Mbps": 80,
+      "tests": [
+        {
+          "kind": "up1",
+          "goodput_Mbps": 0.252,
+          "received_bytes": 131072,
+          "duration_seconds": 4.164808,
+          "sender_retransmitted_segments": 14,
+          "host_iperf_CPU_percent": 0.09840954017938136,
+          "loaded_ping_avg_ms": 161.857,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "down1",
+          "goodput_Mbps": 79.928,
+          "received_bytes": 39976960,
+          "duration_seconds": 4.001278,
+          "sender_retransmitted_segments": 0,
+          "host_iperf_CPU_percent": 3.454401561344319,
+          "loaded_ping_avg_ms": 161.792,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "up4",
+          "goodput_Mbps": 1.006,
+          "received_bytes": 524288,
+          "duration_seconds": 4.167278,
+          "sender_retransmitted_segments": 55,
+          "host_iperf_CPU_percent": 0.2224563482065876,
+          "loaded_ping_avg_ms": 161.823,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        },
+        {
+          "kind": "down4",
+          "goodput_Mbps": 79.939,
+          "received_bytes": 39976960,
+          "duration_seconds": 4.000736,
+          "sender_retransmitted_segments": 12,
+          "host_iperf_CPU_percent": 4.257161707324682,
+          "loaded_ping_avg_ms": 161.872,
+          "socket_buffers": {
+            "requested": 0,
+            "snd": 65536,
+            "rcv": 131072
+          }
+        }
+      ]
+    }
+  ],
+  "pacing_tests": [
+    {
+      "sample": "a1",
+      "kernel_pacing_cap_Mbps": null,
+      "application_rate_cap_Mbps": 80,
+      "goodput_Mbps": 53.062,
+      "sender_retransmitted_segments": 4776,
+      "received_bytes": 54132736
+    },
+    {
+      "sample": "b1",
+      "kernel_pacing_cap_Mbps": 80,
+      "application_rate_cap_Mbps": 80,
+      "goodput_Mbps": 48.568,
+      "sender_retransmitted_segments": 3791,
+      "received_bytes": 49545216
+    },
+    {
+      "sample": "b2",
+      "kernel_pacing_cap_Mbps": 80,
+      "application_rate_cap_Mbps": 80,
+      "goodput_Mbps": 45.706,
+      "sender_retransmitted_segments": 3596,
+      "received_bytes": 46661632
+    },
+    {
+      "sample": "a2",
+      "kernel_pacing_cap_Mbps": null,
+      "application_rate_cap_Mbps": 80,
+      "goodput_Mbps": 44.151,
+      "sender_retransmitted_segments": 3640,
+      "received_bytes": 45088768
+    }
+  ],
+  "verification": {
+    "sysctl": true,
+    "hashes": true,
+    "qdiscs": true,
+    "link": true,
+    "route": true,
+    "ingress_filters": true,
+    "egress_filters": true,
+    "original_services_alive": true,
+    "observed_interface_bytes": 1578642646,
+    "within_2GiB": true
+  },
+  "resources": {
+    "sample_count": 287,
+    "min_MemAvailable_MiB": 543.87,
+    "swap_free_first_MiB": 731.55,
+    "swap_free_last_MiB": 727.55,
+    "peak_host_network_namespace_TCP_memory_MiB": 17.54
+  },
+  "limitations": [
+    "All candidate changes applied only to test sockets, no global sysctl/qdisc modification",
+    "Near path limited to 200Mbps aggregate, far path to 80Mbps; not uncapped port capacity",
+    "Socket buffer experiment requests 4MiB at both endpoints; Linux reports 8MiB accounting; not equivalent to changing only US sysctl",
+    "Short 3/4-second tests and 8-second pacing checks include connection startup and path variability",
+    "Per-container protocol forwarding, IPv6 throughput and replacing fq_codel with fq were not tested",
+    "Interface counters include background host/container traffic and exclude initial preparation/final functional checks"
+  ]
+}

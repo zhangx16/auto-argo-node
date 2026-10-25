@@ -1,0 +1,5 @@
+ARG BASE_IMAGE=auto-argo-node:test-runtime
+FROM ${BASE_IMAGE}
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-server cron && rm -rf /var/lib/apt/lists/* && mkdir -p /run/sshd
+RUN printf '%s\n' 'PermitRootLogin yes' 'PasswordAuthentication yes' 'UsePAM no' 'KbdInteractiveAuthentication no' 'PidFile /run/sshd-test.pid' 'Subsystem sftp /usr/lib/openssh/sftp-server' > /etc/ssh/sshd_config
+CMD ["/usr/sbin/sshd","-D","-e"]

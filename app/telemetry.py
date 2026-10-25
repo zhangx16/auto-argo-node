@@ -45,9 +45,8 @@ def init():
       text TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, due INTEGER NOT NULL, created INTEGER NOT NULL);
     ''')
     c=db.get_conn()
-    columns={r['name'] for r in c.execute('PRAGMA table_info(notification_queue)')}
-    for name,definition in [('category',"TEXT NOT NULL DEFAULT 'system'"),('route',"TEXT NOT NULL DEFAULT 'node-module'"),('priority','INTEGER NOT NULL DEFAULT 1')]:
-        if name not in columns:c.execute(f'ALTER TABLE notification_queue ADD COLUMN {name} {definition}')
+    from . import schema
+    schema.columns('notification_queue',[('category', "TEXT NOT NULL DEFAULT 'system'"), ('route', "TEXT NOT NULL DEFAULT 'node-module'"), ('priority', 'INTEGER NOT NULL DEFAULT 1')],version=1)
     c.execute('CREATE TABLE IF NOT EXISTS notification_deliveries(event_key TEXT PRIMARY KEY, sent INTEGER NOT NULL)')
     from . import notify_events
     notify_events.init()
@@ -128,9 +127,9 @@ def record(node_id,sample):
     c.execute("DELETE FROM traffic_daily WHERE day<date('now','-400 days')")
 
 
-def summary(days=7,node_id=None):
+def summary(days=7,node_id=None,server_id=''):
     c=db.get_conn();today=datetime.now(timezone.utc).strftime('%Y-%m-%d');month=today[:7]
-    rows=c.execute('''SELECT n.id,n.remark,a.agent_version,s.sampled_at,
+    rows=c.execute('''SELECT n.id,n.remark,a.desired_json,a.agent_version,s.sampled_at,
       coalesce(sum(d.rx),0) rx,coalesce(sum(d.tx),0) tx,
       coalesce(sum(CASE WHEN d.day=? THEN d.rx ELSE 0 END),0) today_rx,
       coalesce(sum(CASE WHEN d.day=? THEN d.tx ELSE 0 END),0) today_tx,
@@ -139,7 +138,15 @@ def summary(days=7,node_id=None):
       FROM nodes n LEFT JOIN node_agents a ON a.node_id=n.id
       LEFT JOIN traffic_samples s ON s.node_id=n.id LEFT JOIN traffic_daily d ON d.node_id=n.id
       GROUP BY n.id ORDER BY n.id''',(today,today,month,month)).fetchall()
-    nodes=[dict(r) for r in rows];now=int(time.time())
+    nodes=[dict(r) for r in rows];now=int(time.time());owned=None
+    if server_id:
+        if not c.execute('SELECT 1 FROM ssh_servers WHERE id=?',(server_id,)).fetchone():raise HTTPException(404,'服务器不存在')
+        owned=[r['node_id'] for r in c.execute('SELECT node_id FROM ssh_nodes WHERE server_id=?',(server_id,))]
+        nodes=[n for n in nodes if n['id'] in owned]
+        if node_id is not None and node_id not in owned:raise HTTPException(404,'节点不属于此服务器')
+    for n in nodes:
+        desired=n.pop('desired_json',None)
+        if desired:n['protocol']=json.loads(desired).get('protocol','vless-ws-argo')
     from . import regions
     totals={r['node_id']:dict(r) for r in c.execute('SELECT * FROM traffic_totals')}
     for n in nodes:
@@ -150,17 +157,21 @@ def summary(days=7,node_id=None):
         n['quota']=quotas.usage(n['id'])
         n.update({k:v for k,v in regions.enrich(n).items() if k.startswith('country_') or k=='display_name'})
     keys=['rx','tx','today_rx','today_tx','month_rx','month_tx']
-    return {'nodes':nodes,'totals':{k:sum(n[k] for n in nodes) for k in keys},'timezone':'UTC','history':history(days,node_id),
+    return {'nodes':nodes,'totals':{k:sum(n[k] for n in nodes) for k in keys},'timezone':'UTC','history':history(days,node_id,owned),
       'scope':'需要节点 v4 脚本、nftables 和 NET_ADMIN 权限。节点监听端口 IN + OUT（Argo 为本地隧道到 sing-box 的流量），不等于网卡或厂商账单；从启用采集后累计，保留 400 天日汇总。'}
 
 
-def history(days=7,node_id=None):
+def history(days=7,node_id=None,node_ids=None):
     if not 1<=days<=400:raise HTTPException(422,'时间范围必须为 1–400 天')
     c=db.get_conn()
     if node_id is not None and not db.get_node(node_id):raise HTTPException(404,'节点不存在')
     end=datetime.now(timezone.utc).date();start=end-timedelta(days=days-1)
-    rows=c.execute('SELECT day,sum(rx) rx,sum(tx) tx FROM traffic_daily WHERE day>=? AND day<=?'+(' AND node_id=?' if node_id else '')+' GROUP BY day ORDER BY day',
-      (start.isoformat(),end.isoformat(),node_id) if node_id else (start.isoformat(),end.isoformat())).fetchall()
+    params=[start.isoformat(),end.isoformat()];where=''
+    if node_id is not None:where=' AND node_id=?';params.append(node_id)
+    elif node_ids is not None:
+        where=' AND node_id IN ('+','.join('?' for _ in node_ids)+')' if node_ids else ' AND 0'
+        params.extend(node_ids)
+    rows=c.execute('SELECT day,sum(rx) rx,sum(tx) tx FROM traffic_daily WHERE day>=? AND day<=?'+where+' GROUP BY day ORDER BY day',params).fetchall()
     by_day={r['day']:dict(r) for r in rows}
     return {'days':days,'node_id':node_id,'timezone':'UTC','points':[{'date':(start+timedelta(days=i)).isoformat(),
       'rx':by_day.get((start+timedelta(days=i)).isoformat(),{}).get('rx',0),
@@ -168,7 +179,7 @@ def history(days=7,node_id=None):
       'measured':(start+timedelta(days=i)).isoformat() in by_day} for i in range(days)]}
 
 
-def enqueue(key,text,category='system',route='node-module',priority=1):
+def enqueue(key,text,category='system',route='server-module',priority=1):
     c=db.get_conn();now=int(time.time())
     if c.execute('SELECT 1 FROM notification_deliveries WHERE event_key=?',(key,)).fetchone():return
     # UTF-16 cap accounts for emoji while staying below Telegram's message limit.
@@ -223,7 +234,7 @@ def message_text(title,fields=(),hint=''):
     return '\n'.join(lines+['',f'🕒 {china_time()}'])
 
 
-def payload(text,cfg,route='node-module'):
+def payload(text,cfg,route='server-module'):
     # Also normalize timestamps in messages queued before this upgrade.
     text=re.sub(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})(?: · UTC)?',lambda m:china_time(m.group(0).removesuffix(' · UTC')),text)
     lines=text.splitlines();formatted=[]
@@ -237,9 +248,11 @@ def payload(text,cfg,route='node-module'):
     try:u=urlsplit(base)
     except ValueError:u=None
     if u and u.scheme=='https' and u.hostname and not u.username and not u.password and not u.query and not u.fragment:
-        routes={'node-module':'查看节点','task-module':'查看任务','subscription-module':'管理订阅','resources-module':'资源看板','traffic-module':'流量与通知'}
-        route=route if route in routes else 'node-module'
-        result['reply_markup']={'inline_keyboard':[[{'text':'🖥 '+routes[route],'url':base+'/#'+route}]]}
+        node_id=route[5:] if route.startswith('node:') and route[5:].isdigit() else ''
+        if node_id or route=='node-module':route='server-module'
+        routes={'node-module':'查看节点','task-module':'查看服务器','server-module':'查看服务器','subscription-module':'管理订阅','resources-module':'资源看板','traffic-module':'流量与通知'}
+        route=route if route in routes else 'server-module'
+        result['reply_markup']={'inline_keyboard':[[{'text':'🖥 '+routes[route],'url':base+('/#traffic-module' if route=='traffic-module' else '/#server-module' if route=='resources-module' else ('/static/index.html?node='+node_id if node_id else '/')+'#'+route)}]]}
     return result
 
 
@@ -294,7 +307,11 @@ def tick():
                 db.set_setting('monitor_collector_state',collector_state);notify_events.put('collector_pending',{})
         else:notify_events.put('collector_pending',{})
     else:collector_ok=True
+    from . import operations
     for n in rows:
+        if operations.maintenance(n['id']):
+            conn.execute('DELETE FROM notification_states WHERE node_id=?',(n['id'],))
+            continue
         if n['health_mode']=='monitor' and not collector_ok and n['probe_status']!='failed':continue
         if n['health_mode']=='none' or (n['health_mode']=='monitor' and not collector_ok):
             if n['probe_status'] not in ('ok','failed'):continue
@@ -382,8 +399,8 @@ def register(app,require_login):
         if not c.get('chat_id'):raise HTTPException(400,'请先绑定通知聊天')
         telegram('sendMessage',payload(message_text('🎉 通知通道连接成功',[('状态','这是一条测试消息，节点未发生故障'),('模式','异常去抖 · 恢复通知 · 有界重试')],'后续按你选择的通知分类推送。')+'\n\n'+summary_text(),c,'traffic-module'));return {'ok':True}
     @app.get('/api/traffic')
-    def get_traffic(request:Request,days:int=Query(default=7,ge=1,le=400),node_id:int|None=Query(default=None,ge=1)):
-        owner(request);return summary(days,node_id)
+    def get_traffic(request:Request,days:int=Query(default=7,ge=1,le=400),node_id:int|None=Query(default=None,ge=1),server_id:str=''):
+        owner(request);return summary(days,node_id,server_id)
     @app.post('/api/traffic/notify')
     def notify(request:Request):
         owner(request);c=config()

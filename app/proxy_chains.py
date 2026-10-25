@@ -65,7 +65,7 @@ def expand(chains,parsed_by_ref,include_standalone):
             copies.append((clone,previous))
             previous=name
         names.append(previous)
-    ordinary=list(parsed_by_ref.values()) if include_standalone else []
+    ordinary=[p for ref,p in parsed_by_ref.items() if include_standalone is True or (include_standalone and ref in include_standalone)]
     return [(p,None) for p in ordinary]+copies,names+[p['name'] for p in ordinary]
 
 

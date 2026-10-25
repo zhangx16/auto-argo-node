@@ -97,10 +97,13 @@ check_health() {
  fi
 }
 send_state() {
+ if [ -s /usr/local/etc/sing-box/core-install.json ];then cp /usr/local/etc/sing-box/core-install.json "$WORK/core-version.json";else printf '{}' > "$WORK/core-version.json";fi
+ if [ -s /usr/local/etc/argo-monitor/installation.json ];then cp /usr/local/etc/argo-monitor/installation.json "$WORK/probe-version.json";else printf '{}' > "$WORK/probe-version.json";fi
  state=$1;error=$2;out=$3
  jq -n --arg state "$state" --arg error "$error" --argjson process "$PROCESS" --argjson local "$LOCAL" --argjson public "$PUBLIC" \
+ --slurpfile installedcore "$WORK/core-version.json" --slurpfile installedprobe "$WORK/probe-version.json" \
  --argjson failures "$FAILURES" --argjson last "$LAST_REPAIR" --argjson repairs "$REPAIRS" --slurpfile resources "$WORK/resources.json" --slurpfile traffic "$WORK/traffic.json" --slurpfile meta "$WORK/meta.json" \
- '{agent_version:7,resources:$resources[0],traffic:$traffic[0],state:$state,error:$error,metadata:$meta[0],process_alive:$process,local_ws:$local,public_ws:$public,failure_count:$failures,last_repair:$last,repair_count:$repairs}' > "$out"
+ '{agent_version:8,core_version:($installedcore[0].version // ""),core_sha256:($installedcore[0].sha256 // ""),probe_sha256:($installedprobe[0].sha256 // ""),resources:$resources[0],traffic:$traffic[0],state:$state,error:$error,metadata:$meta[0],process_alive:$process,local_ws:$local,public_ws:$public,failure_count:$failures,last_repair:$last,repair_count:$repairs}' > "$out"
 }
 run_repair() {
  mode=$1;limit=$2
@@ -117,9 +120,14 @@ run_repair() {
  done
  wait "$repair_pid"
 }
+REPAIR_ALLOWED=$(jq -r 'if .control.repair_allowed == false then "false" else "true" end' "$WORK/control.json")
 PROBE_FAILED=false
+PROBE_AT=""
 if [ "$HEALTH_MODE" = monitor ];then
  PROBE_FAILED=$(jq -r '.health.probe_failed // false' "$WORK/control.json")
+ PROBE_AT=$(jq -r '.health.probe_at // ""' "$WORK/control.json")
+ # Each confirmed external probe result can cause at most one repair attempt.
+ if [ -n "$PROBE_AT" ] && [ "$PROBE_AT" = "$(cat "$DIR/last-repaired-probe" 2>/dev/null || true)" ];then PROBE_FAILED=false;fi
  FAILURES=$(jq -r '.health.failure_count // 0' "$WORK/control.json")
  if [ "$PROBE_FAILED" = true ] && [ "$FAILURES" -lt 3 ];then FAILURES=3;fi
  STATE=$(jq -r '.health.health_status // "waiting"' "$WORK/control.json")
@@ -130,11 +138,18 @@ if { [ "$HEALTH_MODE" != monitor ] || [ "$FAILURES" -ge 3 ]; } && jq -e 'type=="
  check_health
  if [ "$PROBE_FAILED" != true ] && [ "$LOCAL" = true ] && { [ "$PUBLIC" = true ] || [ "$PROTOCOL" != vless-ws-argo ]; } && [ "$PROCESS" = true ]; then FAILURES=0;STATE=online
  else
-  FAILURES=$((FAILURES+1));STATE=degraded;ERROR='本地服务或公网 WebSocket 隧道检查未通过'
+  FAILURES=$((FAILURES+1));STATE=degraded;ERROR='本地监听或进程检查未通过'
+  if [ "$PROTOCOL" = vless-ws-argo ];then ERROR='本地服务或公网 WebSocket 隧道检查未通过';fi
+  if [ "$PROBE_FAILED" = true ];then ERROR='面板连续转发检测失败，等待确认恢复';fi
   NOW=$(date +%s)
-  if [ "$MANAGED" = true ] && [ "$FAILURES" -ge 3 ] && [ $((NOW-LAST_REPAIR)) -ge 300 ]; then
+  if [ "$MANAGED" = true ] && [ "$REPAIR_ALLOWED" = true ] && [ "$FAILURES" -ge 3 ] && [ $((NOW-LAST_REPAIR)) -ge 300 ]; then
    # A general egress outage must not create a tunnel restart loop.
    if [ "$PROTOCOL" != vless-ws-argo ] || curl --connect-timeout 3 --max-time 5 -fsS https://www.cloudflare.com/cdn-cgi/trace >/dev/null 2>&1; then
+    # Fresh server-side permission closes the maintenance/rate-limit race.
+    if ! api POST /agent/repair-permit "$WORK/permit.json" || ! jq -e '.allowed==true' "$WORK/permit.json" >/dev/null;then
+     ERROR='面板暂不允许自动修复，请查看维护或修复上限状态'
+    else
+    if [ "$PROBE_FAILED" = true ] && [ -n "$PROBE_AT" ];then printf '%s\n' "$PROBE_AT" > "$DIR/last-repaired-probe";fi
     LAST_REPAIR=$NOW;REPAIRS=$((REPAIRS+1));printf '%s\n' "$LAST_REPAIR" > "$DIR/last-repair";printf '%s\n' "$REPAIRS" > "$DIR/repairs"
     if [ "$LOCAL" != true ] || [ "$PROBE_FAILED" = true ]; then
      run_repair service 60 || true
@@ -145,6 +160,7 @@ if { [ "$HEALTH_MODE" != monitor ] || [ "$FAILURES" -ge 3 ]; } && jq -e 'type=="
      load_meta;check_health
     fi
     if [ "$LOCAL" = true ] && { [ "$PUBLIC" = true ] || [ "$PROTOCOL" != vless-ws-argo ]; } && [ "$PROCESS" = true ]; then FAILURES=0;STATE=online;ERROR='';else STATE=degraded;ERROR='自动修复后隧道仍未通过检查，已进入 5 分钟冷却';fi
+    fi
    else STATE=network_error;ERROR='服务器出站网络检查失败，暂不重建隧道';fi
   fi
  fi
@@ -204,5 +220,3 @@ if api POST /agent/report "$WORK/ack.json" "$DIR/pending-report.json"; then
  rm -f "$DIR/pending-report.json"
 fi
 cat "$WORK/log-tail"
-
-[ ! -x "$BASE/monitor-publish.sh" ] || sh "$BASE/monitor-publish.sh" >/dev/null 2>&1 || true

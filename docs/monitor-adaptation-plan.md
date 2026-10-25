@@ -1,3 +1,5 @@
+> 历史记录：独立 Monitor 模块已按用户要求删除并保留备份，当前请参阅 [移除说明](monitor-removal.md)。
+
 # Monitor 资源看板与独立安装方案评估
 
 日期：2026-10-23。本文保留实施前评估；后续改造已完成，实际变更与验收见 [实施记录](monitor-rollout-report.md)。

@@ -21,6 +21,20 @@ class NotificationTests(unittest.TestCase):
         telemetry.enqueue('long','😀'*5000)
         self.assertLessEqual(len(self.rows()[0]['text'].encode('utf-16-le'))//2,3400)
 
+    def test_node_notification_opens_server_workspace_and_old_route_redirects(self):
+        db.set_setting('panel_url','https://panel.example.com')
+        direct=telemetry.payload('test',{'chat_id':'123'},'node:15')['reply_markup']['inline_keyboard'][0][0]
+        self.assertEqual(direct['url'],'https://panel.example.com/static/index.html?node=15#server-module')
+        old=telemetry.payload('test',{'chat_id':'123'},'node-module')['reply_markup']['inline_keyboard'][0][0]
+        self.assertEqual(old['url'],'https://panel.example.com/#server-module')
+        self.assertIn('服务器',old['text'])
+
+    def test_monitor_notification_routes_use_standalone_page(self):
+        db.set_setting('panel_url','https://panel.example.com')
+        for route,path in [('traffic-module','/#traffic-module'),('resources-module','/#server-module')]:
+            result=telemetry.payload('test',{'chat_id':'123'},route)
+            self.assertEqual(result['reply_markup']['inline_keyboard'][0][0]['url'],'https://panel.example.com'+path)
+
     def test_event_baseline_category_and_repair_cooldown(self):
         cfg={'enabled':True}
         events.add(self.id,'job','配置版本 1 执行失败，保留原监听配置','warning');notify_events.tick(cfg)
@@ -69,15 +83,12 @@ class NotificationTests(unittest.TestCase):
 
     def test_pressure_sustained_gap_and_hysteresis(self):
         c=db.get_conn()
-        # Use actual host schema, with an enrolled synthetic host.
-        cols={r['name']:r for r in c.execute('PRAGMA table_info(monitor_hosts)')}
-        values={'id':'fixture','hub_id':1,'name':'Host','token_hash':'hash','token_secret':'cipher','enroll_hash':'hash','enroll_expires':0,'created_at':db.utcnow(),'last_seen':1000,'health':'{}'}
-        required={k:values.get(k,0 if 'INT' in v['type'] else '') for k,v in cols.items() if k in values or (v['notnull'] and v['dflt_value'] is None)}
-        c.execute('INSERT INTO monitor_hosts('+','.join(required)+') VALUES('+','.join('?' for _ in required)+')',tuple(required.values()))
+        c.execute("INSERT INTO ssh_servers(id,name,created_at) VALUES ('fixture','Host',?)",(db.utcnow(),))
+        c.execute("INSERT INTO ssh_nodes VALUES (?,'fixture')",(self.id,))
         remote=[{'id':1,'online':True,'metrics':{'cpu':95}}]
         def sample(t):
-            c.execute('UPDATE monitor_hosts SET last_seen=?',(t,))
-            with patch.object(notify_events.time,'time',return_value=t),patch('app.monitor.hub',return_value=remote):notify_events.resource_notifications({'enabled':True})
+            c.execute('INSERT OR REPLACE INTO node_resource_latest VALUES (?,?,?)',(self.id,t,json.dumps({'cpu_percent':remote[0]['metrics']['cpu']})))
+            with patch.object(notify_events.time,'time',return_value=t):notify_events.resource_notifications({'enabled':True})
         for t in range(1000,1300,60):sample(t)
         self.assertFalse(self.rows());sample(1300);self.assertEqual(len(self.rows()),1)
         sample(1360);self.assertEqual(len(self.rows()),1)

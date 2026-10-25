@@ -2,9 +2,12 @@
 from collections import Counter
 import hashlib
 import json
+import re
+import ipaddress
 import threading
 import time
 from urllib.parse import urlsplit
+from typing import Literal
 from fastapi import HTTPException, Request
 from pydantic import BaseModel, Field, SecretStr, field_validator
 from . import db, cloudflare, external_nodes, import_fetch
@@ -19,6 +22,20 @@ class SourceBody(BaseModel):
     url:SecretStr=Field(default=SecretStr(''),max_length=4096)
     interval_minutes:int=Field(default=360,ge=15,le=10080)
     enabled:bool=True
+    clean_prefixes:bool=False
+    ipv4_only:bool=False
+    user_agent:Literal['Auto-Argo-Node/1.0','clash.meta','sing-box/1.13.0']='Auto-Argo-Node/1.0'
+    address_overrides:dict[str,str]=Field(default_factory=dict,max_length=1000)
+    @field_validator('address_overrides')
+    @classmethod
+    def valid_overrides(cls,value):
+        result={}
+        for old,new in value.items():
+            before=ipaddress.ip_address(old);after=ipaddress.ip_address(new)
+            if before.version!=6 or after.version!=4 or not after.is_global:raise ValueError('地址对照必须是 IPv6 到公网 IPv4')
+            result[str(before)]=str(after)
+        return result
+
     subscription_ids:list[int]=Field(default_factory=list,max_length=100)
     @field_validator('name')
     @classmethod
@@ -47,6 +64,8 @@ def init():
     CREATE INDEX IF NOT EXISTS idx_source_node ON external_source_nodes(node_id);
     CREATE TABLE IF NOT EXISTS external_source_subscriptions(source_id INTEGER NOT NULL REFERENCES external_sources(id) ON DELETE CASCADE,
       subscription_id INTEGER NOT NULL REFERENCES subscriptions(id) ON DELETE CASCADE,PRIMARY KEY(source_id,subscription_id));''')
+    from . import schema
+    schema.columns('external_sources',[('clean_prefixes','INTEGER NOT NULL DEFAULT 0'),('ipv4_only','INTEGER NOT NULL DEFAULT 0'),('user_agent',"TEXT NOT NULL DEFAULT 'Auto-Argo-Node/1.0'"),('address_overrides',"TEXT NOT NULL DEFAULT '{}'"),('usage_json',"TEXT NOT NULL DEFAULT '{}'"),('usage_checked',"TEXT NOT NULL DEFAULT ''")],version=1)
     c.execute("UPDATE external_sources SET next_run=0 WHERE enabled=1 AND last_checked>last_success")
     c.commit();STOP.clear()
 
@@ -56,7 +75,8 @@ def get(source_id):
     return dict(r)
 
 def describe(row):
-    result={k:v for k,v in row.items() if k not in ('url_cipher','stats_json')}
+    result={k:v for k,v in row.items() if k not in ('url_cipher','stats_json','usage_json','address_overrides')}
+    result['clean_prefixes']=bool(row.get('clean_prefixes'));result['ipv4_only']=bool(row.get('ipv4_only'));result['address_overrides']=json.loads(row.get('address_overrides','{}'));result['usage']=json.loads(row.get('usage_json','{}'))
     result['enabled']=bool(row['enabled']);result['stats']=json.loads(row['stats_json'])
     result['running']=RUNNING==row['id']
     result['subscription_ids']=[r[0] for r in db.get_conn().execute('SELECT subscription_id FROM external_source_subscriptions WHERE source_id=?',(row['id'],))]
@@ -72,6 +92,9 @@ def save(body,source_id=None):
         cipher=cloudflare.encrypt(raw)
     elif old:cipher=old['url_cipher']
     else:raise HTTPException(422,'请填写订阅来源 URL')
+    if old:
+        for field in ('clean_prefixes','ipv4_only','user_agent','address_overrides'):
+            if field not in body.model_fields_set:setattr(body,field,json.loads(old[field]) if field=='address_overrides' else old[field])
     c=db.get_conn()
     for sid in body.subscription_ids:
         if not c.execute('SELECT 1 FROM subscriptions WHERE id=?',(sid,)).fetchone():raise HTTPException(422,'选择的目标订阅不存在')
@@ -83,9 +106,38 @@ def save(body,source_id=None):
         else:
             source_id=c.execute('INSERT INTO external_sources(name,url_cipher,interval_minutes,enabled) VALUES (?,?,?,?)',
                 (body.name,cipher,body.interval_minutes,int(body.enabled))).lastrowid
+        c.execute('UPDATE external_sources SET clean_prefixes=?,ipv4_only=?,user_agent=?,address_overrides=? WHERE id=?',(int(body.clean_prefixes),int(body.ipv4_only),body.user_agent,json.dumps(body.address_overrides),source_id))
         c.execute('DELETE FROM external_source_subscriptions WHERE source_id=?',(source_id,))
         c.executemany('INSERT INTO external_source_subscriptions VALUES (?,?)',[(source_id,sid) for sid in body.subscription_ids])
     return describe(get(source_id))
+
+def parse_usage(header):
+    if len(header)>4096:return {}
+    pairs={k.lower():int(v) for k,v in re.findall(r'(upload|download|total|expire)\s*=\s*(\d+)',header,re.I) if len(v)<=16}
+    if not all(k in pairs for k in ('upload','download','total')) or any(v>9_000_000_000_000_000 for v in pairs.values()):return {}
+    if pairs.get('expire',0)>253402300799:return {}
+    return pairs
+
+
+def transform(source,parsed):
+    result=dict(parsed);items=[];replaced=filtered=renamed=0;overrides=json.loads(source.get('address_overrides','{}'))
+    for item in parsed['nodes']:
+        item=dict(item);p=external_nodes.parse_uri(item['uri'],item['name']);old=p['server']
+        if source.get('clean_prefixes'):
+            name=re.sub(r'^(?:(?:【(?:测试|优化|直连|家宽)】|\[(?:测试|优化|直连|家宽)\]|(?:测试|优化|直连|家宽)[/／:：|｜_-])\s*)+','',p['name']).strip()
+            if name and name!=p['name']:renamed+=1;p['name']=name
+        if old in overrides:
+            p['server']=overrides[old]
+            # A TCP endpoint change must preserve the authentication and TLS SNI.
+            replaced+=1
+        try:version=ipaddress.ip_address(p['server']).version
+        except ValueError:version=0
+        if source.get('ipv4_only') and version==6:filtered+=1;continue
+        item.update(name=p['name'],server=p['server'],uri=external_nodes.to_uri(p));items.append(item)
+    if not items:raise ValueError('地址筛选后没有可导入节点，保留原有节点')
+    result.update(nodes=items,total=len(items));result['transforms']={'renamed':renamed,'ipv4_replaced':replaced,'ipv6_filtered':filtered}
+    return result
+
 
 def key_for(item,counts):
     identity=external_nodes.fingerprint(external_nodes.parse_uri(item['uri'],item['name']))
@@ -102,9 +154,10 @@ def apply(source_id,revision,parsed):
         raise ValueError('来源为空或含无效节点，已保留原有节点；请检查来源内容')
     c=db.get_conn();source=get(source_id)
     if source['revision']!=revision or not source['enabled']:return False
+    parsed=transform(source,parsed)
     counts=Counter(item['protocol']+'\0'+item['name'] for item in parsed['nodes'])
     previous=[dict(r) for r in c.execute('SELECT * FROM external_source_nodes WHERE source_id=?',(source_id,))]
-    seen=set();stats={'added':0,'updated':0,'missing':0,'ignored':0,'shared':0}
+    seen=set();stats={'added':0,'updated':0,'missing':0,'ignored':0,'shared':0,**parsed.get('transforms',{})}
     with c:
         for item in parsed['nodes']:
             remote_key,identity=key_for(item,counts)
@@ -159,6 +212,7 @@ def apply(source_id,revision,parsed):
             if old['node_id'] and old['owned'] and not old['excluded']:
                 c.execute('UPDATE external_nodes SET source_available=0 WHERE id=?',(old['node_id'],))
                 stats['missing']+=int(bool(old['present']))
+        if '_usage' in parsed:c.execute('UPDATE external_sources SET usage_json=?,usage_checked=? WHERE id=?',(json.dumps(parsed['_usage']),db.utcnow(),source_id))
         c.execute('UPDATE external_sources SET last_success=?,last_error=\'\',stats_json=? WHERE id=?',(db.utcnow(),json.dumps(stats),source_id))
     return True
 
@@ -184,8 +238,10 @@ def schedule(source_id):
     def run():
         global RUNNING
         try:
-            content=import_fetch.fetch(cloudflare.decrypt(source['url_cipher']))
+            metadata={}
+            content=import_fetch.fetch(cloudflare.decrypt(source['url_cipher']),metadata=metadata,user_agent=source.get('user_agent','Auto-Argo-Node/1.0'))
             parsed=external_nodes.parse_content(content)
+            parsed['_usage']=parse_usage(metadata.get('subscription_userinfo',''))
             from . import agent
             with agent.LOCK:
                 if not STOP.is_set():apply(source_id,source['revision'],parsed)
